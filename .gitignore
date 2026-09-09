@@ -1,0 +1,32 @@
+# ===== 敏感信息（绝不提交）=====
+secrets.local.json
+
+# ===== 运行时产生的数据 =====
+record_*.json
+raw_*.bin
+ak_review_*.json
+review_*.md
+review_run.log
+tmp_review/
+hf_*.json
+*.log
+live/live_coach.md
+live/live_test_output.md
+live/live_observed.log
+live/server.log
+live/games/
+live/crash_context.json
+
+# ===== 模型权重（体积大，按 README 自行下载）=====
+*.pth
+
+# ===== libriichi 预编译扩展（按 README 自行获取）=====
+live/mjb/libriichi/
+
+# ===== 第三方引擎二进制（按 engine/README.md 自行获取）=====
+engine/akagi/
+engine/reviewer/
+
+# ===== Python =====
+__pycache__/
+*.pyc
