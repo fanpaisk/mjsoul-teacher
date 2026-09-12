@@ -131,6 +131,7 @@ const S = {
 
 // ---------- mjai 事件输出（bot.py 增量消费） ----------
 function pushEv(ev) {
+  if (S.resyncing) return; // 重连重放的历史事件：去重丢弃，引擎状态不动
   if (!S.gameStarted) { S.preStart.push(ev); return; }
   S.mjaiBuffer.push(ev);
 }
@@ -200,7 +201,7 @@ function requestAdvice(drawn, kind) {
         : '推荐：';
   const suppressStale = !(TEST || TEST_ACTIONS); // 离线回放无实时性，全部打印
   adviseChain = adviseChain.then(async () => {
-    if (!S.inGame) return;
+    if (!S.inGame || S.resyncing || S.kyokuEngineBanned || !S.kyokuActive) return;
     if (MORTAL.gaveUp) return; // 本场已放弃，静默记录
     if (!mortalAlive() && !mortalStart()) { out('（引擎不可用，自主判断）'); return; }
     const upto = S.mjaiBuffer.length;
@@ -245,14 +246,25 @@ function onMortalVerdict(resp, tag, kind) {
   const meta = mv.meta || {};
   const items = (meta.show && meta.show.items) || [];
   if (!items.length) {
-    // 决策点没有带候选列表 —— 某事件解析失败导致引擎状态失步，重启重放
-    out('⚠ 引擎未给出候选（重启重放中）');
+    // 决策点没有带候选列表 —— 引擎状态失步。连续两次则熔断本局（避免杀-重启死循环），
+    // 熔断会在下一局的 start_kyoku 自动解除
+    S.emptyShow = (S.emptyShow || 0) + 1;
     S.lastAdvice = null;
-    healEngine('no show items');
+    if (S.emptyShow >= 2) {
+      if (!S.kyokuEngineBanned) {
+        S.kyokuEngineBanned = true;
+        out('⚠ 引擎连续异常，本局剩余停用（下局自动恢复）');
+      }
+    } else {
+      out('⚠ 引擎未给出候选（重启重放中）');
+      healEngine('no show items');
+    }
     return;
   }
   out(tag + items.map(itemStr).join(' ｜ '));
   S.lastAdvice = items.map((x, i) => ({ tile: (x.pais || [])[0], rank: i + 1, value: x.value || '' }));
+  S.emptyShow = 0;
+  MORTAL.restarts = 0; // 决策成功 = 引擎健康，重置熔断计数
 }
 /** 引擎状态失步自愈：杀掉进程，下次决策时全量重放 */
 function healEngine(why) {
@@ -260,8 +272,47 @@ function healEngine(why) {
   try { if (MORTAL.proc && MORTAL.proc.exitCode === null) MORTAL.proc.kill(); } catch (e) {}
 }
 
+/** 断线重连重同步：引擎与事件缓冲【原封不动】，进入"重放去重"模式。
+ *  重放的历史事件按牌山计数识别并丢弃（计数随摸牌单调递减，
+ *  计数 < 最后已见值的事件即新事件），无缝续上，无需重建。 */
+function onGameResync() {
+  out('⚠ 检测到断线重连，正在对齐牌局（几秒内自动恢复）…');
+  obs('resync on reconnect');
+  S.resyncing = true;
+  S.resyncLastLeft = S.leftTiles; // 最后已见的牌山剩余数
+  S.lastAdvice = null;
+  S.reqSeq++; // 作废在途决策
+}
+/** 重同步期间的事件分流：识别重放历史 vs 新事件 */
+function handleResyncAction(name, d) {
+  if (name === 'ActionDealTile') {
+    if (d.left_tile_count === undefined) { obs('resync: DealTile 无计数，丢弃'); return; }
+    if (S.resyncLastLeft !== null && S.resyncLastLeft !== undefined && d.left_tile_count < S.resyncLastLeft) {
+      // 新事件！退出重同步，按正常流程处理本事件
+      S.resyncing = false;
+      out('✓ 牌局已对齐，建议恢复');
+      obs(`resync exit at left=${d.left_tile_count}`);
+      handleAction(name, d);
+      return;
+    }
+    S.resyncLastLeft = d.left_tile_count; // 重放历史（含与断点相同的最后事件）
+    return;
+  }
+  if (name === 'ActionNewRound') {
+    // 局边界：标签没见过的 = 真正的新一局（重连跨局场景）
+    const label = (['东', '南', '西', '北'][d.chang] || '?') + (d.ju + 1) + '局' + (d.ben ? '·' + d.ben + '本场' : '');
+    if (S.kyokuLabelsSeen && S.kyokuLabelsSeen.has(label)) { obs('resync: 重放局 ' + label + '，丢弃'); return; }
+    S.resyncing = false;
+    out('✓ 牌局已对齐（新一局），建议恢复');
+    handleAction(name, d);
+    return;
+  }
+  // 其余动作（切牌/鸣牌/和了等）都是重放历史的一部分，丢弃
+}
+
 // ---------- Action* 处理 ----------
 function handleAction(name, d) {
+  if (S.resyncing) { handleResyncAction(name, d); return; }
   // 立直宣言牌存活确认：下一个事件若非荣和/流局/鸣牌，则立直成立
   if (S.pendingReachAccept !== null && !['ActionHule', 'ActionNoTile', 'ActionLiuJu', 'ActionChiPengGang'].includes(name)) {
     flushReachAccept();
@@ -275,6 +326,9 @@ function handleAction(name, d) {
       out('\n===== 新对局开始 ' + new Date().toLocaleTimeString('zh-CN') + ' =====');
     }
     S.kyokuLabel = (['东', '南', '西', '北'][d.chang] || '?') + (d.ju + 1) + '局' + (d.ben ? '·' + d.ben + '本场' : '');
+    (S.kyokuLabelsSeen = S.kyokuLabelsSeen || new Set()).add(S.kyokuLabel); // 登记本局标签（重放去重用）
+    S.kyokuEngineBanned = false;
+    S.emptyShow = 0;
     S.junme = 0;
     S.leftTiles = d.left_tile_count !== undefined ? d.left_tile_count : null;
     S.expLeft = d.left_tile_count !== undefined ? d.left_tile_count : null; // 漏帧守恒检查基准
@@ -324,8 +378,11 @@ function handleAction(name, d) {
     diffDoras(d.doras);
     // 漏帧守恒检查：客户端报的牌山剩余数每次摸牌应恰好 -1，对不上 = 漏帧
     if (d.left_tile_count !== undefined) {
-      S.dealCnt++;
-      if (S.expLeft !== null && S.expLeft !== undefined) {
+      if (S.expLeft === null || S.expLeft === undefined) {
+        S.expLeft = d.left_tile_count; // 基线建立（重同步后首摸）
+        S.dealCnt = 0;
+      } else {
+        S.dealCnt++;
         const expect = S.expLeft - S.dealCnt;
         if (d.left_tile_count !== expect) {
           obs(`drift: client=${d.left_tile_count} expect=${expect} (dealCnt=${S.dealCnt})`);
@@ -513,6 +570,10 @@ function onGameEnd() {
       fs.writeFileSync(path.join(dirG, 'last_game.txt'), S.gameUuid + '\n');
     }
   } catch (e) {}
+  S.resyncing = false;
+  S.kyokuEngineBanned = false;
+  S.emptyShow = 0;
+  S.kyokuLabelsSeen = new Set();
   S.inGame = false;
   S.seat = null;
   S.gameStarted = false;
@@ -570,6 +631,11 @@ function handleFrame(dir, url, hex) {
     try {
       const req = decodeMsg('ReqAuthGame', inner);
       if (req && req.game_uuid) {
+        // 断线重连会对同一局重新 authGame —— 服务器将重放历史动作。
+        // 重放事件用牌山计数去重（见 handleResyncAction），引擎状态全程不动
+        if (S.inGame && S.gameUuid === req.game_uuid && !S.resyncing) {
+          onGameResync();
+        }
         S.gameUuid = req.game_uuid;
         obs('game uuid: ' + req.game_uuid);
       }
@@ -644,6 +710,23 @@ if (TEST_ACTIONS) {
           const items = PANEL.buf.filter(x => x.i > since).slice(-40);
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ items, next: PANEL.idx }));
+          return;
+        }
+        if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg') {
+          // 自动选取 live/assets 下最新的视频文件（mp4/webm），文件名随意，换视频即换背景
+          try {
+            const dirA = path.join(__dirname, 'assets');
+            const vids = fs.readdirSync(dirA)
+              .filter(f => /.(mp4|webm|png|jpe?g|webp|gif)$/i.test(f))
+              .map(f => ({ f, t: fs.statSync(path.join(dirA, f)).mtimeMs }))
+              .sort((a, b) => b.t - a.t);
+            if (!vids.length) { res.statusCode = 404; res.end(''); return; }
+            const data = fs.readFileSync(path.join(dirA, vids[0].f));
+            const ext = vids[0].f.toLowerCase().split('.').pop();
+            res.setHeader('Content-Type', ({ mp4: 'video/mp4', webm: 'video/webm', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' })[ext] || 'application/octet-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.end(data);
+          } catch (e) { res.statusCode = 404; res.end(''); }
           return;
         }
         if (req.url === '/assets/pai.svg') {

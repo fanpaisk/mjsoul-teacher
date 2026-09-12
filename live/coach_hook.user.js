@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.5.2
+// @version      1.11.0
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -126,33 +126,101 @@
 
   // 5) 实时建议悬浮面板（可拖动 / 可折叠 / 自动滚动）
   const PANEL_KEY = 'coach_panel_v1';
-  let pState = { x: null, y: null, collapsed: false };
+  let pState = { x: null, y: null, w: null, collapsed: false, hidden: false, tileDark: false };
   try { Object.assign(pState, JSON.parse(localStorage.getItem(PANEL_KEY) || '{}')); } catch (e) {}
   const saveP = () => { try { localStorage.setItem(PANEL_KEY, JSON.stringify(pState)); } catch (e) {} };
+  let skinRatio = 0; // 皮肤媒体 高/宽 比（视频或图片加载后得到）
+  function applyPanelSize() {
+    const w = Math.round(pState.w || 450);
+    panel.style.width = w + 'px';
+    if (skinRatio > 0) {
+      const h = Math.round(w * skinRatio);
+      panel.style.height = Math.max(180, Math.min(h, window.innerHeight - 60)) + 'px';
+    }
+  }
   const panel = document.createElement('div');
-  panel.style.cssText = 'position:fixed;top:12px;right:12px;width:450px;z-index:2147483646;font-family:sans-serif;';
+  panel.style.cssText = 'position:fixed;top:12px;right:12px;width:450px;z-index:2147483646;font-family:sans-serif;background:linear-gradient(168deg,rgba(44,26,33,.94),rgba(22,12,18,.93));border:1px solid rgba(166,30,42,.45);border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.5),0 0 14px rgba(166,30,42,.2);overflow:hidden;';
+  // 背景视频：GM 通道取本地视频 blob，视频加载后按 16:9 自适应面板高度
+  let bgEl = null;
+  const bgShade = document.createElement('div');
+  bgShade.className = 'cjc-bgshade';
+  panel.appendChild(bgShade);
+  function applyBgMedia() {
+    if (typeof GM_xmlhttpRequest !== 'function') return;
+    GM_xmlhttpRequest({ method: 'GET', url: 'http://127.0.0.1:18766/assets/bg.mp4', timeout: 60000, responseType: 'blob',
+      onload: (r) => {
+        try {
+          if (r.status !== 200 || !r.response) return;
+          const isVideo = (r.response.type || '').startsWith('video');
+          if (bgEl) bgEl.remove();
+          bgEl = document.createElement(isVideo ? 'video' : 'img');
+          bgEl.className = 'cjc-bg';
+          if (isVideo) { bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; }
+          bgEl.src = URL.createObjectURL(r.response);
+          panel.insertBefore(bgEl, bgShade);
+          if (isVideo) {
+            const tryPlay = () => bgEl.play().catch(() => {
+              const kick = () => { bgEl.muted = true; bgEl.play().catch(() => {}); };
+              document.addEventListener('pointerdown', kick, { once: true });
+              document.addEventListener('keydown', kick, { once: true });
+            });
+            tryPlay();
+            bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
+          } else {
+            bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
+          }
+        } catch (e) {}
+      },
+      onerror: () => {},
+    });
+  }
+  applyBgMedia();
   const pHead = document.createElement('div');
-  pHead.style.cssText = 'background:rgba(18,28,48,.85);color:#cfe3ff;padding:4px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;';
+  pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
-  pTitle.textContent = '雀魂教练';
+  pTitle.textContent = '🦋 往生堂 ';
   const pBtn = document.createElement('span');
   pBtn.textContent = '—';
   pBtn.style.cssText = 'cursor:pointer;color:#8fa3c8;padding:0 6px;font-size:14px;';
   pHead.appendChild(pTitle);
   pHead.appendChild(pBtn);
   const pBody = document.createElement('div');
-  pBody.style.cssText = 'background:rgba(8,14,28,.74);color:#dce4f5;font-size:12px;line-height:1.55;padding:6px 10px;border-radius:0 0 6px 6px;height:212px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;box-sizing:border-box;';
+  pBody.style.cssText = 'position:relative;z-index:1;background:rgba(24,10,16,.38);color:#ffffff;text-shadow:0 1px 2px rgba(0,0,0,.8);font-size:12px;line-height:1.55;padding:6px 10px;border-radius:0 0 6px 6px;height:calc(100% - 29px);overflow-y:auto;white-space:pre-wrap;word-break:break-all;box-sizing:border-box;';
   panel.appendChild(pHead);
   panel.appendChild(pBody);
   const mountP = () => { (document.body || document.documentElement).appendChild(panel); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountP, { once: true });
   else mountP();
+  const pDark = document.createElement('span');
+  pDark.style.cssText = 'cursor:pointer;color:#c9909c;padding:0 6px;font-size:13px;';
+  pDark.title = '切换默认黑牌模式（开启后牌面默认为黑，按住牌面可查看）';
+  pHead.appendChild(pDark);
+  function applyTilesMode() {
+    pBody.classList.toggle('cjc-dark-tiles', !!pState.tileDark);
+    pDark.textContent = pState.tileDark ? '🖤' : '🀄';
+    pDark.style.color = pState.tileDark ? '#cdb5f2' : '#c9909c';
+  }
+  pDark.addEventListener('click', () => {
+    pState.tileDark = !pState.tileDark;
+    saveP();
+    applyTilesMode();
+  });
   const applyP = () => {
+    panel.style.display = pState.hidden ? 'none' : '';
+    applyPanelSize();
     if (pState.x !== null) { panel.style.left = pState.x + 'px'; panel.style.top = pState.y + 'px'; panel.style.right = 'auto'; }
     pBody.style.display = pState.collapsed ? 'none' : 'block';
     pBtn.textContent = pState.collapsed ? '▢' : '—';
+    applyTilesMode();
   };
   applyP();
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'F9') return;
+    e.preventDefault(); e.stopPropagation();
+    pState.hidden = !pState.hidden;
+    applyP(); saveP();
+    try { badge.textContent = pState.hidden ? '面板已隐藏 (F9 显示)' : '面板已显示'; } catch (err) {}
+  }, true);
   pBtn.addEventListener('click', () => { pState.collapsed = !pState.collapsed; applyP(); saveP(); });
   pHead.addEventListener('mousedown', (e) => {
     if (e.target === pBtn) return;
@@ -167,6 +235,22 @@
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
     e.preventDefault();
+  });
+  const grip = document.createElement('div');
+  grip.className = 'cjc-grip';
+  grip.title = '拖动调整宽度';
+  panel.appendChild(grip);
+  grip.addEventListener('mousedown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const startW = panel.getBoundingClientRect().width;
+    const move = (ev) => {
+      pState.w = Math.max(300, Math.min(window.innerWidth - 40, Math.round(startW + (startX - ev.clientX))));
+      applyPanelSize();
+    };
+    const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); saveP(); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   });
   const spanOf = (text, bold, color) => {
     const s = document.createElement('span');
@@ -194,10 +278,34 @@
   .cjc-cand.first .cjc-pct{color:#ffd54a;font-weight:700;font-size:13px}
   .cjc-cand{display:inline-flex;align-items:center;white-space:nowrap;vertical-align:middle}
   .cjc-cand.first .cjc-tj{box-shadow:0 0 0 1.5px #ffd54a,0 1px 3px rgba(0,0,0,.5)}
-  .cjc-t{width:27px;height:37px;margin:0 3px 0 1px;vertical-align:middle;flex:none;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.4));border-radius:6px}
+  .cjc-t{width:27px;height:37px;margin:0 3px 0 1px;vertical-align:middle;flex:none;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.4));border-radius:6px;cursor:pointer}
+  .cjc-tj{cursor:pointer}
+  .cjc-hide-tiles .cjc-t,.cjc-hide-tiles .cjc-tj{filter:brightness(0) drop-shadow(0 1px 1.5px rgba(0,0,0,.4))!important}
+  .cjc-hide-tiles .cjc-t.txt{color:transparent!important;background:#15161a}
   .cjc-t.txt{width:auto;height:auto;padding:1px 6px;background:rgba(255,255,255,.12);border-radius:4px;filter:none}
   .cjc-cand.first .cjc-t{box-shadow:0 0 0 1.5px #ffd54a,0 1px 3px rgba(0,0,0,.5)}
   .cjc-cand.first .cjc-t.txt{box-shadow:none}
+  .cjc-chip.reach{background:rgba(155,111,224,.25);color:#cdb5f2}
+  .cjc-chip.skip{background:rgba(180,160,170,.15);color:#b39aa4}
+  .cjc-chip.hora{background:rgba(196,39,45,.3);color:#ff9099}
+  .cjc-chip.call{background:rgba(245,215,142,.15);color:#f0d9a0}
+  .cjc-chip.chi{background:rgba(110,200,140,.18);color:#8fe0a8}
+  .cjc-pct{color:#c9a9b2}
+  .cjc-cand.first .cjc-pct{color:#ffab5e;font-size:13px}
+  .cjc-cand.first .cjc-t{box-shadow:0 0 0 1.5px #f5d78e,0 1px 3px rgba(0,0,0,.55)}
+  .cjc-div{display:flex;align-items:center;gap:8px;margin:7px 0 3px;opacity:.9}
+  .cjc-div i{flex:1;height:1px}
+  .cjc-div i.l{background:linear-gradient(90deg,transparent,#a61e2a)}
+  .cjc-div i.r{background:linear-gradient(270deg,transparent,#a61e2a)}
+  .cjc-div em{font-style:normal;font-size:10px;color:#d9cff0;letter-spacing:3px;text-shadow:0 0 6px rgba(155,111,224,.8)}
+  .cjc-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  .cjc-bgshade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(22,10,16,.16),rgba(22,10,16,.02) 30%,rgba(22,10,16,.1));z-index:0}
+  .cjc-grip{position:absolute;left:0;top:0;bottom:0;width:8px;cursor:ew-resize;z-index:2;background:linear-gradient(90deg,rgba(255,171,94,.4),rgba(255,171,94,0));opacity:0;transition:opacity .25s}
+  .cjc-grip:hover{opacity:1}
+  .cjc-dark-tiles .cjc-t,.cjc-dark-tiles .cjc-tj{filter:brightness(0) drop-shadow(0 1px 1.5px rgba(0,0,0,.4))!important}
+  .cjc-dark-tiles .cjc-t.txt{color:transparent!important;background:#15161a!important}
+  .cjc-dark-tiles .cjc-t.cjc-peek,.cjc-dark-tiles .cjc-tj.cjc-peek{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.4))!important}
+  .cjc-dark-tiles .cjc-t.txt.cjc-peek{color:#ecdce0!important;background:rgba(255,255,255,.12)!important}
   `;
   document.head.appendChild(style);
 
@@ -311,29 +419,55 @@
     const div = document.createElement('div');
     const am = /^([^：]*?(?:推荐：|我可：))([\s\S]+)$/.exec(text);
     if (!am) { div.textContent = text; return div; }
-    div.appendChild(spanOf(am[1], false, '#9fb3d1'));
+    div.appendChild(spanOf(am[1], false, '#c9909c'));
     const parts = am[2].split(' ｜ ');
     parts.forEach((p, i) => {
-      if (i) div.appendChild(spanOf(' ｜ ', false, '#7d8aa5'));
+      if (i) div.appendChild(spanOf(' ｜ ', false, '#8a6a75'));
       div.appendChild(candNode(p, i === 0));
     });
     return div;
   }
+  let tilesHidden = false;
+  pBody.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!t || !t.closest || (!t.closest('.cjc-t') && !t.closest('.cjc-tj'))) return;
+    if (pState.tileDark) return; // 默认黑牌模式下，点击交给按住查看逻辑
+    e.preventDefault();
+    tilesHidden = !tilesHidden;
+    pBody.classList.toggle('cjc-hide-tiles', tilesHidden);
+    try { badge.textContent = tilesHidden ? '牌面已隐藏（点击牌面恢复）' : '牌面已显示'; } catch (err) {}
+  });
+  pBody.addEventListener('mousedown', (e) => {
+    if (!pState.tileDark) return;
+    const t = e.target && e.target.closest ? e.target.closest('.cjc-t, .cjc-tj') : null;
+    if (t) t.classList.add('cjc-peek');
+  });
+  document.addEventListener('mouseup', () => {
+    document.querySelectorAll('.cjc-peek').forEach(el => el.classList.remove('cjc-peek'));
+  });
   const fmtLine = (t) => {
     const div = document.createElement('div');
     // 建议行（含"推荐：/我可："）：候选渲染成牌面 + 概率条，首选项金色高亮
     if (/^[^：]*?(?:推荐：|我可：)/.test(t)) return adviceNode(t);
     div.textContent = t;
-    if (/^  你切了/.test(t)) div.style.color = '#7d8aa5';
+    if (/^  你切了/.test(t)) div.style.color = '#a5828c';
     else if (/^【/.test(t)) { div.style.color = '#ffd479'; div.style.fontWeight = '600'; }
-    else if (/^  座位|^>/.test(t)) div.style.color = '#a8b6cf';
-    else div.style.color = '#c9d4ea';
+    else if (/^  座位|^>/.test(t)) div.style.color = '#c4a3ad';
+    else div.style.color = '#ecdce0';
     return div;
   };
   let since = 0, pollBusy = false;
   const renderP = (data) => {
     if (!data || !Array.isArray(data.items) || !data.items.length) return;
-    for (const it of data.items) pBody.appendChild(fmtLine(it.text));
+    for (const it of data.items) {
+      if (/^[^：]*?(?:推荐：|我可：)/.test(it.text) && pBody.childNodes.length) {
+        const dv = document.createElement('div');
+        dv.className = 'cjc-div';
+        dv.innerHTML = '<i class="l"></i><em>蝶引</em><i class="r"></i>';
+        pBody.appendChild(dv);
+      }
+      pBody.appendChild(fmtLine(it.text));
+    }
     while (pBody.childNodes.length > 40) pBody.removeChild(pBody.firstChild);
     since = data.next;
     pBody.scrollTop = pBody.scrollHeight;
