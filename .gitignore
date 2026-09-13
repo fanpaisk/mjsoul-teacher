@@ -23,6 +23,10 @@ live/crash_context.json
 # ===== libriichi 预编译扩展（按 README 自行获取）=====
 live/mjb/libriichi/
 
+# ===== 个人素材（版权原因不入库，用户自备）=====
+live/assets/bg.mp4
+live/assets/emo/
+
 # ===== 第三方引擎二进制（按 engine/README.md 自行获取）=====
 engine/akagi/
 engine/reviewer/

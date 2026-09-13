@@ -15,9 +15,12 @@ const mj = require('../coach.js'); // 向听数计算（补充解释用）
 
 const args = process.argv.slice(2);
 const TEST = args.find(a => a.startsWith('--test='));
+const ARG_REVIEW = args.includes('--review');      // 复盘模式：切完牌才提醒
+const ARG_DARK = args.includes('--dark-tiles');    // 默认黑牌模式：牌面默认为黑，按住查看
 const TEST_ACTIONS = args.find(a => a.startsWith('--test-actions='));
 const OUT_FILE = path.join(__dirname, (TEST || TEST_ACTIONS) ? 'live_test_output.md' : 'live_coach.md');
 const OBS_LOG = path.join(__dirname, 'live_observed.log');
+try { fs.writeFileSync(OUT_FILE, ''); } catch (e) {} // 每次启动从新文件开始
 
 // ---------- Mortal 引擎（Akagi 嵌入式 Python + bot.py） ----------
 const MORTAL_PY = path.join(__dirname, '..', 'engine', 'akagi', 'akagi-3.7.1-windows-x64', 'runtime', 'python', 'x86_64-pc-windows-msvc', 'python.exe');
@@ -58,6 +61,7 @@ function obs(msg) {
   try { fs.appendFileSync(OBS_LOG, new Date().toISOString().slice(11, 19) + ' ' + msg + '\n'); } catch (e) {}
 }
 
+// ---------- 用户偏好（复盘模式等） ----------
 // ---------- Mortal 引擎管理 ----------
 function mortalStart() {
   try { if (MORTAL.proc) MORTAL.proc.kill(); } catch (e) {}
@@ -126,8 +130,18 @@ const S = {
   lastDoras: [],
   pendingReachAccept: null,    // 立直宣言牌未被荣和/鸣牌时，下一事件前补 reach_accepted
   lastDrawn: null,
-  lastAdvice: null,            // { tile, rank, value }[] 最近一次候选
+  lastAdvice: null,
+  reviewMode: false,     // 复盘模式：切完牌才出现该手提醒
+  pendingOpReview: null, // 待事后复盘的鸣牌机会 { drawn, bufLen }            // { tile, rank, value }[] 最近一次候选
 };
+try {
+  const st = JSON.parse(fs.readFileSync(path.join(__dirname, 'coach_settings.json'), 'utf8'));
+  if (typeof st.reviewMode === 'boolean') S.reviewMode = st.reviewMode;
+  if (typeof st.tileDark === 'boolean') S.tileDark = st.tileDark;
+} catch (e) {}
+if (ARG_REVIEW) S.reviewMode = true;
+if (ARG_DARK) S.tileDark = true;
+
 
 // ---------- mjai 事件输出（bot.py 增量消费） ----------
 function pushEv(ev) {
@@ -189,22 +203,26 @@ function bootstrapFromPending() {
 
 // ---------- 决策请求（promise 链串行化，引擎恰好消费每个事件一次） ----------
 let adviseChain = Promise.resolve();
-function requestAdvice(drawn, kind) {
+function requestAdvice(drawn, kind, endOffset) {
   S.reqSeq++;
   const mySeq = S.reqSeq;
   const tag = kind === 'call'
     ? '鸣牌后推荐：'
-    : kind === 'op'
+    : kind === 'review'
+      ? '本手复盘 · 推荐：'
+      : kind === 'review-op'
+        ? `事后复盘（他人切 ${disp(drawn)}）· 我可：`
+        : kind === 'op'
       ? `他人切 ${disp(drawn)}，我可：`
       : kind === 'chan'
         ? `他人杠 ${disp(drawn)}，我可：`
         : '推荐：';
-  const suppressStale = !(TEST || TEST_ACTIONS); // 离线回放无实时性，全部打印
+  const suppressStale = !(TEST || TEST_ACTIONS || S.reviewMode); // 复盘模式下每手都要出现
+  const upto = S.mjaiBuffer.length - Math.max(0, endOffset || 0); // 批次边界在请求时固定（决策点语义位置）
   adviseChain = adviseChain.then(async () => {
     if (!S.inGame || S.resyncing || S.kyokuEngineBanned || !S.kyokuActive) return;
     if (MORTAL.gaveUp) return; // 本场已放弃，静默记录
     if (!mortalAlive() && !mortalStart()) { out('（引擎不可用，自主判断）'); return; }
-    const upto = S.mjaiBuffer.length;
     if (upto <= MORTAL.sentUpTo) { // 无新事件或缓冲被重建，避免发出空批次
       MORTAL.sentUpTo = upto;
       return;
@@ -213,7 +231,7 @@ function requestAdvice(drawn, kind) {
     const resp = await mortalSend(batch);
     MORTAL.sentUpTo = upto;
     if (suppressStale && mySeq !== S.reqSeq) { obs(`stale verdict seq=${mySeq} cur=${S.reqSeq}`); return; }
-    onMortalVerdict(resp, tag, kind);
+    onMortalVerdict(resp, tag, kind, drawn);
   }).catch(e => obs('advise error: ' + ((e && e.message) || e)));
 }
 
@@ -239,7 +257,7 @@ function itemStr(x) {
   const extra = x.pais && x.pais[0] ? ' ' + disp(x.pais[0]) : '';
   return cn + extra + ' ' + v;
 }
-function onMortalVerdict(resp, tag, kind) {
+function onMortalVerdict(resp, tag, kind, actual) {
   let mv = null;
   try { mv = JSON.parse(resp); } catch (e) {}
   if (!mv) { out('⚠ 引擎无响应，自主判断'); return; }
@@ -263,6 +281,11 @@ function onMortalVerdict(resp, tag, kind) {
   }
   out(tag + items.map(itemStr).join(' ｜ '));
   S.lastAdvice = items.map((x, i) => ({ tile: (x.pais || [])[0], rank: i + 1, value: x.value || '' }));
+  if (kind === 'review' && actual) {
+    const t = T(actual);
+    const c = S.lastAdvice.find(x => x.tile === t);
+    out(`  → 你切了 ${disp(t)}` + (c ? `（Mortal 第 ${c.rank} 名 ${c.value}）` : '（不在推荐之列）'));
+  }
   S.emptyShow = 0;
   MORTAL.restarts = 0; // 决策成功 = 引擎健康，重置熔断计数
 }
@@ -313,6 +336,11 @@ function handleResyncAction(name, d) {
 // ---------- Action* 处理 ----------
 function handleAction(name, d) {
   if (S.resyncing) { handleResyncAction(name, d); return; }
+  if (S.pendingOpReview) {
+    const pr = S.pendingOpReview;
+    S.pendingOpReview = null;
+    requestAdvice(pr.drawn, 'review-op', Math.max(0, S.mjaiBuffer.length - pr.bufLen));
+  }
   // 立直宣言牌存活确认：下一个事件若非荣和/流局/鸣牌，则立直成立
   if (S.pendingReachAccept !== null && !['ActionHule', 'ActionNoTile', 'ActionLiuJu', 'ActionChiPengGang'].includes(name)) {
     flushReachAccept();
@@ -422,7 +450,7 @@ function handleAction(name, d) {
       S.lastDrawn = d.tile;
       S.junme = S.rivers[S.seat].length + 1;
       S.leftTiles = d.left_tile_count !== undefined ? d.left_tile_count : S.leftTiles;
-      if (d.tile) requestAdvice(d.tile, 'draw');
+      if (d.tile && !S.reviewMode) requestAdvice(d.tile, 'draw');
     } else {
       pushEv({ type: 'tsumo', actor: d.seat, pai: '?' });
     }
@@ -448,6 +476,7 @@ function handleAction(name, d) {
       S.rivers[s].push(d.tile);
       if (d.tile) S.seen[mj.tileId(d.tile)]++;
     }
+    const beforePush = S.mjaiBuffer.length;
     if (d.is_liqi) {
       pushEv({ type: 'reach', actor: s });
       S.riichi[s] = true;
@@ -456,10 +485,16 @@ function handleAction(name, d) {
       out(`  座位${s} 立直宣言！`);
     }
     pushEv({ type: 'dahai', actor: s, pai, tsumogiri: !!d.moqie });
+    if (s === S.seat && S.reviewMode && d.tile) {
+      requestAdvice(d.tile, 'review', S.mjaiBuffer.length - beforePush);
+    }
     // 他家切牌后我有吃/碰/杠/荣和机会 → 请求操作评分（含跳过）
     if (s !== S.seat && d.tile) {
       const ops = d.operation && d.operation.operation_list;
-      if (ops && ops.length) requestAdvice(d.tile, 'op');
+      if (ops && ops.length) {
+        if (S.reviewMode) S.pendingOpReview = { drawn: d.tile, bufLen: S.mjaiBuffer.length };
+        else requestAdvice(d.tile, 'op');
+      }
     }
     return;
   }
@@ -495,7 +530,7 @@ function handleAction(name, d) {
     }
     if (calledIdx >= 0) S.seen[mj.tileId(tiles[calledIdx])]++;
     out(`  座位${d.seat} ${d.type === 0 ? '吃' : d.type === 1 ? '碰' : '明杠'} ${tiles.map(disp).join('')}`);
-    if (d.seat === S.seat) requestAdvice(null, 'call'); // 鸣牌后立即请求切牌建议
+    if (d.seat === S.seat && !S.reviewMode) requestAdvice(null, 'call'); // 鸣牌后立即请求切牌建议
     return;
   }
 
@@ -712,7 +747,7 @@ if (TEST_ACTIONS) {
           res.end(JSON.stringify({ items, next: PANEL.idx }));
           return;
         }
-        if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg') {
+        if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg' && !req.url.startsWith('/assets/emo/')) {
           // 自动选取 live/assets 下最新的视频文件（mp4/webm），文件名随意，换视频即换背景
           try {
             const dirA = path.join(__dirname, 'assets');
@@ -729,6 +764,28 @@ if (TEST_ACTIONS) {
           } catch (e) { res.statusCode = 404; res.end(''); }
           return;
         }
+        if (req.url.startsWith('/assets/emo/')) {
+          try {
+            const name = path.basename(decodeURIComponent(req.url));
+            if (!/^emo_t[1-4].jpg$/.test(name)) throw new Error('bad name');
+            const data = fs.readFileSync(path.join(__dirname, 'assets', 'emo', name));
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'max-age=86400');
+            res.end(data);
+          } catch (e) { res.statusCode = 404; res.end(''); }
+          return;
+        }
+        if (req.url.startsWith('/assets/emo/')) {
+          try {
+            const name = path.basename(decodeURIComponent(req.url));
+            if (!/^emo_t[1-4]\.jpg$/.test(name)) throw new Error('bad name');
+            const data = fs.readFileSync(path.join(__dirname, 'assets', 'emo', name));
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'max-age=86400');
+            res.end(data);
+          } catch (e) { res.statusCode = 404; res.end(''); }
+          return;
+        }
         if (req.url === '/assets/pai.svg') {
           try {
             const data = fs.readFileSync(path.join(__dirname, 'assets', 'pai.svg'));
@@ -736,6 +793,11 @@ if (TEST_ACTIONS) {
             res.setHeader('Cache-Control', 'max-age=86400');
             res.end(data);
           } catch (e) { res.statusCode = 404; res.end(''); }
+          return;
+        }
+        if (req.url === '/config') {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ review: !!S.reviewMode, tileDark: !!S.tileDark }));
           return;
         }
         if (req.url === '/announce') {

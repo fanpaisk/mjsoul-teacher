@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.11.0
+// @version      1.19.0
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -131,14 +131,19 @@
   const saveP = () => { try { localStorage.setItem(PANEL_KEY, JSON.stringify(pState)); } catch (e) {} };
   let skinRatio = 0; // 皮肤媒体 高/宽 比（视频或图片加载后得到）
   function applyPanelSize() {
-    const w = Math.round(pState.w || 450);
-    panel.style.width = w + 'px';
+    let w = Math.round(pState.w || 450);
     if (skinRatio > 0) {
-      const h = Math.round(w * skinRatio);
-      panel.style.height = Math.max(180, Math.min(h, window.innerHeight - 60)) + 'px';
+      const maxW = Math.floor((window.innerHeight - 60) / skinRatio); // 高度不超出屏幕
+      w = Math.min(w, maxW);
     }
+    const z = w / 450;
+    panel.style.zoom = z;           // 内容整体等比缩放（文字/牌面/表情/视频全跟随）
+    panel.style.width = '450px';    // 基准宽度
+    if (skinRatio > 0) panel.style.height = Math.round(450 * skinRatio) + 'px';
+    pState.w = w;
   }
   const panel = document.createElement('div');
+  panel.id = 'cjc-panel';
   panel.style.cssText = 'position:fixed;top:12px;right:12px;width:450px;z-index:2147483646;font-family:sans-serif;background:linear-gradient(168deg,rgba(44,26,33,.94),rgba(22,12,18,.93));border:1px solid rgba(166,30,42,.45);border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.5),0 0 14px rgba(166,30,42,.2);overflow:hidden;';
   // 背景视频：GM 通道取本地视频 blob，视频加载后按 16:9 自适应面板高度
   let bgEl = null;
@@ -178,7 +183,7 @@
   const pHead = document.createElement('div');
   pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
-  pTitle.textContent = '🦋 往生堂 ';
+  pTitle.textContent = '🦋 往生堂 · 雀魂教练 v1.18.0';
   const pBtn = document.createElement('span');
   pBtn.textContent = '—';
   pBtn.style.cssText = 'cursor:pointer;color:#8fa3c8;padding:0 6px;font-size:14px;';
@@ -191,20 +196,15 @@
   const mountP = () => { (document.body || document.documentElement).appendChild(panel); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountP, { once: true });
   else mountP();
-  const pDark = document.createElement('span');
-  pDark.style.cssText = 'cursor:pointer;color:#c9909c;padding:0 6px;font-size:13px;';
-  pDark.title = '切换默认黑牌模式（开启后牌面默认为黑，按住牌面可查看）';
-  pHead.appendChild(pDark);
   function applyTilesMode() {
     pBody.classList.toggle('cjc-dark-tiles', !!pState.tileDark);
-    pDark.textContent = pState.tileDark ? '🖤' : '🀄';
-    pDark.style.color = pState.tileDark ? '#cdb5f2' : '#c9909c';
   }
-  pDark.addEventListener('click', () => {
-    pState.tileDark = !pState.tileDark;
-    saveP();
-    applyTilesMode();
-  });
+  if (typeof GM_xmlhttpRequest === 'function') {
+    GM_xmlhttpRequest({ method: 'GET', url: 'http://127.0.0.1:18766/config', timeout: 5000,
+      onload: (r) => { try { const j = JSON.parse(r.responseText); pState.tileDark = !!j.tileDark; applyTilesMode(); saveP(); } catch (e) {} },
+      onerror: () => {},
+    });
+  }
   const applyP = () => {
     panel.style.display = pState.hidden ? 'none' : '';
     applyPanelSize();
@@ -415,18 +415,6 @@
     wrap.appendChild(p);
     return wrap;
   }
-  function adviceNode(text) {
-    const div = document.createElement('div');
-    const am = /^([^：]*?(?:推荐：|我可：))([\s\S]+)$/.exec(text);
-    if (!am) { div.textContent = text; return div; }
-    div.appendChild(spanOf(am[1], false, '#c9909c'));
-    const parts = am[2].split(' ｜ ');
-    parts.forEach((p, i) => {
-      if (i) div.appendChild(spanOf(' ｜ ', false, '#8a6a75'));
-      div.appendChild(candNode(p, i === 0));
-    });
-    return div;
-  }
   let tilesHidden = false;
   pBody.addEventListener('click', (e) => {
     const t = e.target;
@@ -445,30 +433,145 @@
   document.addEventListener('mouseup', () => {
     document.querySelectorAll('.cjc-peek').forEach(el => el.classList.remove('cjc-peek'));
   });
+  const emoURLs = [null, null, null, null]; // tier 1-4 的表情图 blob URL
+  function preloadEmo() {
+    if (typeof GM_xmlhttpRequest !== 'function') return;
+    for (let i = 1; i <= 4; i++) {
+      GM_xmlhttpRequest({ method: 'GET', url: 'http://127.0.0.1:18766/assets/emo/emo_t' + i + '.jpg', timeout: 15000, responseType: 'blob',
+        onload: (r) => { try { if (r.status === 200) emoURLs[i - 1] = URL.createObjectURL(r.response); } catch (e) {} },
+        onerror: () => {},
+      });
+    }
+  }
+  preloadEmo();
+  const MARK_COLORS = ['#f5d78e', '#8fe0a8', '#a89aa2', '#ff6b7d'];
+  const MARK_TIPS = ['完美 — 与 Mortal 首选一致', '不错 — Mortal 第 2 选择', '一般 — Mortal 第 3 选择', '失误 — 不在 Mortal 推荐之列'];
+  function markNode(tier) {
+    const c = MARK_COLORS[tier - 1] || MARK_COLORS[3];
+    const wrap = document.createElement('span');
+    wrap.style.cssText = 'flex:0 0 30px;display:inline-flex;align-items:center;justify-content:center;';
+    wrap.title = MARK_TIPS[tier - 1] || MARK_TIPS[3];
+    if (emoURLs[tier - 1]) {
+      const img = document.createElement('img');
+      img.src = emoURLs[tier - 1];
+      img.style.cssText = 'width:36px;height:36px;object-fit:cover;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.5);';
+      wrap.appendChild(img);
+      return wrap;
+    }
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '17'); svg.setAttribute('height', '17');
+    const ring = document.createElementNS(NS, 'circle');
+    ring.setAttribute('cx', '12'); ring.setAttribute('cy', '12'); ring.setAttribute('r', '10');
+    ring.setAttribute('fill', 'rgba(0,0,0,.35)'); ring.setAttribute('stroke', c); ring.setAttribute('stroke-width', '2');
+    svg.appendChild(ring);
+    const st = (d) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', c); p.setAttribute('stroke-width', '1.8'); p.setAttribute('stroke-linecap', 'round'); svg.appendChild(p); };
+    const dot = (x, y) => { const o = document.createElementNS(NS, 'circle'); o.setAttribute('cx', x); o.setAttribute('cy', y); o.setAttribute('r', '1.4'); o.setAttribute('fill', c); svg.appendChild(o); };
+    if (tier === 1) { // 大笑脸：^^ 眼 + 大弧笑
+      st('M6.5 10 L8.5 8 L10.5 10'); st('M13.5 10 L15.5 8 L17.5 10');
+      st('M7.5 14 Q12 18.5 16.5 14');
+    } else if (tier === 2) { // 微笑脸
+      dot(8.5, 9); dot(15.5, 9); st('M8 14 Q12 17 16 14');
+    } else if (tier === 3) { // 平淡脸
+      dot(8.5, 9); dot(15.5, 9); st('M8.5 14.5 L15.5 14.5');
+    } else { // 哭脸：XX 眼 + 皱眉 + 泪滴
+      st('M7 8 L10 11'); st('M10 8 L7 11'); st('M14 8 L17 11'); st('M17 8 L14 11');
+      st('M8 16 Q12 13 16 16');
+      const tear = document.createElementNS(NS, 'path');
+      tear.setAttribute('d', 'M17.5 12.5 Q18.6 14.2 17.5 15 Q16.4 14.2 17.5 12.5');
+      tear.setAttribute('fill', c); tear.setAttribute('opacity', '.8');
+      svg.appendChild(tear);
+    }
+    wrap.appendChild(svg);
+    return wrap;
+  }
   const fmtLine = (t) => {
     const div = document.createElement('div');
-    // 建议行（含"推荐：/我可："）：候选渲染成牌面 + 概率条，首选项金色高亮
+    // 建议行：候选渲染成牌面，首选项金色高亮
     if (/^[^：]*?(?:推荐：|我可：)/.test(t)) return adviceNode(t);
+    // 其余行：纯文字着色（表情由组右栏负责）
     div.textContent = t;
-    if (/^  你切了/.test(t)) div.style.color = '#a5828c';
-    else if (/^【/.test(t)) { div.style.color = '#ffd479'; div.style.fontWeight = '600'; }
+    if (/^  (?:→ )?你切了/.test(t)) div.style.color = '#a5828c';
+    else if (/^【/.test(t)) { div.style.color = '#f5d78e'; div.style.fontWeight = '600'; }
     else if (/^  座位|^>/.test(t)) div.style.color = '#c4a3ad';
     else div.style.color = '#ecdce0';
     return div;
   };
   let since = 0, pollBusy = false;
+  let openGroup = null; // 当前未闭合的输出组 { div, center, markSlot }
+  function newGroup() {
+    const g = document.createElement('div');
+    g.style.cssText = 'display:flex;align-items:center;gap:4px;';
+    const slotL = document.createElement('span');
+    slotL.style.cssText = 'flex:0 0 36px;display:inline-flex;'; // 左预留位
+    const center = document.createElement('div');
+    center.style.cssText = 'flex:1;min-width:0;';
+    const markSlot = document.createElement('span');
+    markSlot.style.cssText = 'flex:0 0 44px;display:inline-flex;align-items:center;justify-content:center;';
+    g.appendChild(slotL); g.appendChild(center); g.appendChild(markSlot);
+    return { div: g, center, markSlot };
+  }
+  function groupCenter() {
+    if (!openGroup) {
+      openGroup = newGroup();
+      pBody.appendChild(openGroup.div);
+    }
+    return openGroup.center;
+  }
+  function setGroupMark(tier) {
+    if (!openGroup) return;
+    openGroup.markSlot.innerHTML = '';
+    openGroup.markSlot.appendChild(markNode(tier));
+  }
+  function clearGroupMark() {
+    if (!openGroup) return;
+    openGroup.markSlot.innerHTML = '';
+  }
+  const adviceNode = (t) => {
+    const div = document.createElement('div');
+    const am = /^([^：]*?(?:推荐：|我可：))([\s\S]+)$/.exec(t);
+    if (!am) { div.textContent = t; return div; }
+    div.appendChild(spanOf(am[1], false, '#c9909c'));
+    const parts = am[2].split(' ｜ ');
+    parts.forEach((p, i) => {
+      if (i) div.appendChild(spanOf(' ｜ ', false, '#8a6a75'));
+      div.appendChild(candNode(p, i === 0));
+    });
+    return div;
+  };
   const renderP = (data) => {
     if (!data || !Array.isArray(data.items) || !data.items.length) return;
     for (const it of data.items) {
-      if (/^[^：]*?(?:推荐：|我可：)/.test(it.text) && pBody.childNodes.length) {
-        const dv = document.createElement('div');
-        dv.className = 'cjc-div';
-        dv.innerHTML = '<i class="l"></i><em>蝶引</em><i class="r"></i>';
-        pBody.appendChild(dv);
+      const t = it.text;
+      const isAdv = /^[^：]*?(?:推荐：|我可：)/.test(t);
+      const isFb = /^  (?:→ )?你切了/.test(t);
+      if (isAdv) {
+        // 新组开始：蝶引分界 + 组容器
+        if (pBody.childNodes.length) {
+          const dv = document.createElement('div');
+          dv.className = 'cjc-div';
+          dv.innerHTML = '<i class="l"></i><em>🦋 蝶引</em><i class="r"></i>';
+          pBody.appendChild(dv);
+        }
+        openGroup = newGroup();
+        clearGroupMark();
+        pBody.appendChild(openGroup.div);
+        openGroup.center.appendChild(fmtLine(t));
+      } else if (isFb) {
+        // 反馈行进当前组，并点亮组右栏的表情
+        if (openGroup) {
+          openGroup.center.appendChild(fmtLine(t));
+          const fm = /第 (\d) 名/.exec(t);
+          setGroupMark(fm ? +fm[1] : 4);
+        } else {
+          pBody.appendChild(fmtLine(t));
+        }
+      } else {
+        (openGroup ? groupCenter() : pBody).appendChild(fmtLine(t));
       }
-      pBody.appendChild(fmtLine(it.text));
     }
-    while (pBody.childNodes.length > 40) pBody.removeChild(pBody.firstChild);
+    while (pBody.childNodes.length > 30) pBody.removeChild(pBody.firstChild);
     since = data.next;
     pBody.scrollTop = pBody.scrollHeight;
   };
@@ -476,7 +579,7 @@
     if (pollBusy) return;
     pollBusy = true;
     const done = () => { pollBusy = false; };
-    if (typeof GM_xmlhttpRequest === 'function') {
+    if (typeof GM_xmlhttpRequest === "function") {
       GM_xmlhttpRequest({
         method: 'GET',
         url: 'http://127.0.0.1:18766/panel?since=' + since,
