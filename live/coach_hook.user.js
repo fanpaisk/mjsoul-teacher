@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.19.0
+// @version      1.24.0
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -117,6 +117,10 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
   else mount();
   setInterval(() => { try { if (!badge.isConnected) mount(); } catch (e) {} }, 3000);
+  badge.addEventListener('click', () => {
+    pState.x = null; pState.y = null; saveP(); applyP();
+    try { badge.textContent = '面板已归位'; } catch (e) {}
+  });
   setInterval(() => {
     const s = W.__liveHook;
     const kb = s.bytes > 1024 ? (s.bytes / 1024).toFixed(0) + 'K' : s.bytes;
@@ -196,6 +200,7 @@
   const mountP = () => { (document.body || document.documentElement).appendChild(panel); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountP, { once: true });
   else mountP();
+  window.addEventListener('resize', () => { applyP(); saveP(); });
   function applyTilesMode() {
     pBody.classList.toggle('cjc-dark-tiles', !!pState.tileDark);
   }
@@ -205,9 +210,15 @@
       onerror: () => {},
     });
   }
+  const clampPos = () => {
+    if (pState.x === null) return;
+    pState.x = Math.max(0, Math.min(pState.x, window.innerWidth - 60));
+    pState.y = Math.max(0, Math.min(pState.y, window.innerHeight - 60));
+  };
   const applyP = () => {
     panel.style.display = pState.hidden ? 'none' : '';
     applyPanelSize();
+    clampPos();
     if (pState.x !== null) { panel.style.left = pState.x + 'px'; panel.style.top = pState.y + 'px'; panel.style.right = 'auto'; }
     pBody.style.display = pState.collapsed ? 'none' : 'block';
     pBtn.textContent = pState.collapsed ? '▢' : '—';
@@ -276,7 +287,8 @@
   .cjc-chip.chi{background:rgba(90,210,140,.2);color:#7fe0a5}
   .cjc-pct{font-size:11px;color:#9fb3d1;margin-left:1px}
   .cjc-cand.first .cjc-pct{color:#ffd54a;font-weight:700;font-size:13px}
-  .cjc-cand{display:inline-flex;align-items:center;white-space:nowrap;vertical-align:middle}
+  .cjc-cand{display:inline-flex;flex-direction:column;align-items:center;gap:3px;padding:5px 8px 4px;border-radius:8px;background:rgba(255,255,255,.05);white-space:nowrap;vertical-align:top}
+  .cjc-cand.first{background:rgba(245,215,142,.10);box-shadow:inset 0 0 0 1px rgba(245,215,142,.5)}
   .cjc-cand.first .cjc-tj{box-shadow:0 0 0 1.5px #ffd54a,0 1px 3px rgba(0,0,0,.5)}
   .cjc-t{width:27px;height:37px;margin:0 3px 0 1px;vertical-align:middle;flex:none;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.4));border-radius:6px;cursor:pointer}
   .cjc-tj{cursor:pointer}
@@ -391,29 +403,32 @@
   const T_RE = /^(红5[mps]|[1-9][mps]|[東南西北白發中])$/;
   // 单个候选项："7s 85.56%" / "立直 9m 84.99%" / "跳过 99.87%" / "碰 5m 0.01%" / "吃 45m6m 2.10%"
   function candNode(text, first) {
-    const wrap = document.createElement('span');
-    wrap.className = 'cjc-cand' + (first ? ' first' : '');
+    const card = document.createElement('span');
+    card.className = 'cjc-cand' + (first ? ' first' : '');
     const m = /^(?:(\S+)\s+)?(?:(\S+)\s+)?(\d+(?:\.\d+)?)\s*%$/.exec(text.trim());
-    if (!m) { wrap.textContent = text; return wrap; }
+    if (!m) { card.textContent = text; return card; }
     const a = m[1] || '', b = m[2] || '', pct = m[3] + '%';
+    const top = document.createElement('span');
+    top.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-height:37px;gap:2px;';
     if (a && !b) {
-      if (/^(立直|跳过|荣和|自摸|流局)$/.test(a)) wrap.appendChild(chipNode(a, a));
-      else wrap.appendChild(tileNode(a));
+      if (/^(立直|跳过|荣和|自摸|流局)$/.test(a)) top.appendChild(chipNode(a, a));
+      else top.appendChild(tileNode(a));
     } else if (a && b) {
-      if (/^(碰|明杠|暗杠|加杠)$/.test(a)) { wrap.appendChild(chipNode(a, a)); wrap.appendChild(tileNode(b)); }
+      if (/^(碰|明杠|暗杠|加杠)$/.test(a)) { top.appendChild(chipNode(a, a)); top.appendChild(tileNode(b)); }
       else if (a === '吃') {
-        wrap.appendChild(chipNode(a, a));
-        const t = tileNode(b); t.style.width = 'auto'; t.style.padding = '0 5px'; t.style.fontSize = '11px';
-        wrap.appendChild(t);
+        top.appendChild(chipNode(a, a));
+        const t2 = tileNode(b); t2.style.width = 'auto'; t2.style.padding = '0 5px'; t2.style.fontSize = '11px';
+        top.appendChild(t2);
       } else {
-        wrap.appendChild(chipNode(a, a));
-        if (T_RE.test(b)) wrap.appendChild(tileNode(b));
+        top.appendChild(chipNode(a, a));
+        if (T_RE.test(b)) top.appendChild(tileNode(b));
       }
     }
+    card.appendChild(top);
     const p = document.createElement('span');
     p.className = 'cjc-pct'; p.textContent = pct;
-    wrap.appendChild(p);
-    return wrap;
+    card.appendChild(p);
+    return card;
   }
   let tilesHidden = false;
   pBody.addEventListener('click', (e) => {
@@ -454,7 +469,7 @@
     if (emoURLs[tier - 1]) {
       const img = document.createElement('img');
       img.src = emoURLs[tier - 1];
-      img.style.cssText = 'width:36px;height:36px;object-fit:cover;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.5);';
+      img.style.cssText = 'width:54px;height:54px;object-fit:cover;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,.55);';
       wrap.appendChild(img);
       return wrap;
     }
@@ -492,7 +507,7 @@
     if (/^[^：]*?(?:推荐：|我可：)/.test(t)) return adviceNode(t);
     // 其余行：纯文字着色（表情由组右栏负责）
     div.textContent = t;
-    if (/^  (?:→ )?你切了/.test(t)) div.style.color = '#a5828c';
+    if (/^  (?:→ )?(?:你切了|你选择了)/.test(t)) div.style.color = '#a5828c';
     else if (/^【/.test(t)) { div.style.color = '#f5d78e'; div.style.fontWeight = '600'; }
     else if (/^  座位|^>/.test(t)) div.style.color = '#c4a3ad';
     else div.style.color = '#ecdce0';
@@ -504,11 +519,11 @@
     const g = document.createElement('div');
     g.style.cssText = 'display:flex;align-items:center;gap:4px;';
     const slotL = document.createElement('span');
-    slotL.style.cssText = 'flex:0 0 36px;display:inline-flex;'; // 左预留位
+    slotL.style.cssText = 'flex:0 0 12px;display:inline-flex;'; // 左预留位（压缩）
     const center = document.createElement('div');
     center.style.cssText = 'flex:1;min-width:0;';
     const markSlot = document.createElement('span');
-    markSlot.style.cssText = 'flex:0 0 44px;display:inline-flex;align-items:center;justify-content:center;';
+    markSlot.style.cssText = 'flex:0 0 62px;display:inline-flex;align-items:center;justify-content:center;';
     g.appendChild(slotL); g.appendChild(center); g.appendChild(markSlot);
     return { div: g, center, markSlot };
   }
@@ -533,9 +548,9 @@
     const am = /^([^：]*?(?:推荐：|我可：))([\s\S]+)$/.exec(t);
     if (!am) { div.textContent = t; return div; }
     div.appendChild(spanOf(am[1], false, '#c9909c'));
+    div.style.display = 'inline-flex'; div.style.alignItems = 'center'; div.style.gap = '6px';
     const parts = am[2].split(' ｜ ');
     parts.forEach((p, i) => {
-      if (i) div.appendChild(spanOf(' ｜ ', false, '#8a6a75'));
       div.appendChild(candNode(p, i === 0));
     });
     return div;
@@ -545,7 +560,8 @@
     for (const it of data.items) {
       const t = it.text;
       const isAdv = /^[^：]*?(?:推荐：|我可：)/.test(t);
-      const isFb = /^  (?:→ )?你切了/.test(t);
+      const isChoice = /你选择了/.test(t);
+      const isFb = /^  (?:→ )?(?:你切了|→ 你选择了)/.test(t) || isChoice;
       if (isAdv) {
         // 新组开始：蝶引分界 + 组容器
         if (pBody.childNodes.length) {
@@ -563,7 +579,16 @@
         if (openGroup) {
           openGroup.center.appendChild(fmtLine(t));
           const fm = /第 (\d) 名/.exec(t);
-          setGroupMark(fm ? +fm[1] : 4);
+          const rank = fm ? +fm[1] : 4;
+          const nOpt = openGroup.center.querySelectorAll('.cjc-cand').length || 3;
+          let tier = rank;
+          if (isChoice) {
+            // 鸣牌选择：档位随选项数映射（2选→最好/最差，3选→最好/中/最差）
+            tier = rank === 1 ? 1 : (nOpt === 2 ? 4 : (rank === 2 ? 3 : 4));
+          } else {
+            tier = Math.min(rank, 4);
+          }
+          setGroupMark(tier);
         } else {
           pBody.appendChild(fmtLine(t));
         }

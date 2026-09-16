@@ -203,7 +203,7 @@ function bootstrapFromPending() {
 
 // ---------- 决策请求（promise 链串行化，引擎恰好消费每个事件一次） ----------
 let adviseChain = Promise.resolve();
-function requestAdvice(drawn, kind, endOffset) {
+function requestAdvice(drawn, kind, endOffset, actual) {
   S.reqSeq++;
   const mySeq = S.reqSeq;
   const tag = kind === 'call'
@@ -231,7 +231,7 @@ function requestAdvice(drawn, kind, endOffset) {
     const resp = await mortalSend(batch);
     MORTAL.sentUpTo = upto;
     if (suppressStale && mySeq !== S.reqSeq) { obs(`stale verdict seq=${mySeq} cur=${S.reqSeq}`); return; }
-    onMortalVerdict(resp, tag, kind, drawn);
+    onMortalVerdict(resp, tag, kind, drawn, actual);
   }).catch(e => obs('advise error: ' + ((e && e.message) || e)));
 }
 
@@ -281,6 +281,17 @@ function onMortalVerdict(resp, tag, kind, actual) {
   }
   out(tag + items.map(itemStr).join(' ｜ '));
   S.lastAdvice = items.map((x, i) => ({ tile: (x.pais || [])[0], rank: i + 1, value: x.value || '' }));
+  if (kind === 'review-op' && actual) {
+    const wantLabel = ({ chi: 'Chi', pon: 'Pon', kan: 'Daiminkan', ron: 'Ron', skip: 'Skip' })[actual.type] || 'Skip';
+    const cn = ({ chi: '吃', pon: '碰', kan: '明杠', ron: '荣和', skip: '跳过' })[actual.type] || actual.type;
+    let hit = null;
+    ((meta.show && meta.show.items) || []).forEach((it, i) => {
+      if (hit) return;
+      const L = it.label || '';
+      if (wantLabel === 'Chi' ? L.startsWith('Chi') : L === wantLabel) hit = { rank: i + 1, value: it.value || '' };
+    });
+    out(`  → 你选择了${cn}` + (hit ? `（Mortal 第 ${hit.rank} 名 ${hit.value}）` : '（Mortal 推荐之外）'));
+  }
   if (kind === 'review' && actual) {
     const t = T(actual);
     const c = S.lastAdvice.find(x => x.tile === t);
@@ -339,7 +350,13 @@ function handleAction(name, d) {
   if (S.pendingOpReview) {
     const pr = S.pendingOpReview;
     S.pendingOpReview = null;
-    requestAdvice(pr.drawn, 'review-op', Math.max(0, S.mjaiBuffer.length - pr.bufLen));
+    let actual = { type: 'skip' }; // 窗口关闭且未见自家鸣牌 → 跳过
+    if (name === 'ActionChiPengGang' && d.seat === S.seat) {
+      actual = { type: ['chi', 'pon', 'kan'][d.type] || 'chi' };
+    } else if (name === 'ActionHule' && (d.hules || []).some(h => h.seat === S.seat)) {
+      actual = { type: 'ron' };
+    }
+    requestAdvice(pr.drawn, 'review-op', Math.max(0, S.mjaiBuffer.length - pr.bufLen), actual);
   }
   // 立直宣言牌存活确认：下一个事件若非荣和/流局/鸣牌，则立直成立
   if (S.pendingReachAccept !== null && !['ActionHule', 'ActionNoTile', 'ActionLiuJu', 'ActionChiPengGang'].includes(name)) {
