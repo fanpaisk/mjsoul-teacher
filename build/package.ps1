@@ -10,7 +10,8 @@
 param(
   [switch]$Installer,
   [switch]$WithRuntime,
-  [switch]$Zip
+  [switch]$Zip,
+  [string]$Wallpaper = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +20,7 @@ $ver = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).ve
 Write-Host "雀魂教练 v$ver 打包" -ForegroundColor Cyan
 
 $assembleArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'assemble.ps1'), '-WithModel')
+if ($Wallpaper) { $assembleArgs += @('-Wallpaper', $Wallpaper) }
 & powershell @assembleArgs
 if ($LASTEXITCODE -ne 0) { throw 'assemble 失败' }
 

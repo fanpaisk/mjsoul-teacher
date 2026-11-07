@@ -42,6 +42,7 @@ docs/           内部交接文档（STATUS / DECISIONS / 验收清单）
 
 ```powershell
 powershell -File build\package.ps1                 # 代码 + 模型 + 托盘
+powershell -File build\package.ps1 -Wallpaper "D:\wp.mp4"   # 顺带把本地壁纸打进包（个人构建用，别公开发）
 powershell -File build\package.ps1 -WithRuntime    # 再带裁剪后的 Python 运行时（+503 MB）
 powershell -File build\package.ps1 -WithRuntime -Installer   # 再出安装器
 powershell -File build\smoke.ps1                   # 32 项冒烟（全过才算能发）

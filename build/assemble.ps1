@@ -13,6 +13,7 @@
 #>
 param(
   [switch]$WithRuntime,
+  [string]$Wallpaper = '',
   [switch]$WithModel,
   [switch]$Zip
 )
@@ -103,6 +104,14 @@ if ($WithRuntime) {
   Copy-Item (Join-Path $arch.FullName '*') (Join-Path $out 'runtime/python') -Recurse -Force
 }
 
+# 可选：把本地壁纸打进发行包（仅本地构建用；公开包不要带版权素材）
+if ($Wallpaper) {
+  if (Test-Path $Wallpaper) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $out 'live/assets') | Out-Null
+    Copy-Item $Wallpaper (Join-Path $out 'live/assets/bg.mp4') -Force
+    Write-Host ("      已带壁纸：{0}（{1:N1} MB）" -f (Split-Path $Wallpaper -Leaf), ((Get-Item $Wallpaper).Length / 1MB))
+  } else { Write-Warning "壁纸文件不存在：$Wallpaper" }
+}
 Write-Host "[5/5] 统计" -ForegroundColor Cyan
 $sum = (Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum)
 $cnt = (Get-ChildItem $out -Recurse -File).Count

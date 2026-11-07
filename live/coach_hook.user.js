@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.25.1
+// @version      1.26.0
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -140,6 +140,9 @@
   try { Object.assign(pState, JSON.parse(localStorage.getItem(PANEL_KEY) || '{}')); } catch (e) {}
   const saveP = () => { try { localStorage.setItem(PANEL_KEY, JSON.stringify(pState)); } catch (e) {} };
   let skinRatio = 0; // 皮肤媒体 高/宽 比（视频或图片加载后得到）
+  // 没有壁纸时的**固定高度**：以前只有"有壁纸"才设高度，没壁纸时面板高度由内容撑开，
+  // 于是每出一手就长高一截，打一局能顶到屏幕外（实机反馈，v1.26.0 修）。
+  const PANEL_H = 520;
   function applyPanelSize() {
     let w = Math.round(pState.w || 450);
     if (skinRatio > 0) {
@@ -149,7 +152,8 @@
     const z = w / 450;
     panel.style.zoom = z;           // 内容整体等比缩放（文字/牌面/表情/视频全跟随）
     panel.style.width = '450px';    // 基准宽度
-    if (skinRatio > 0) panel.style.height = Math.round(450 * skinRatio) + 'px';
+    const baseH = skinRatio > 0 ? Math.round(450 * skinRatio) : PANEL_H;
+    panel.style.height = baseH + 'px';   // 没有壁纸也要有固定高度（内容在内部滚动）
     pState.w = w;
   }
   const panel = document.createElement('div');
@@ -193,7 +197,7 @@
   const pHead = document.createElement('div');
   pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
-  pTitle.textContent = '🦋 往生堂 · 雀魂教练 v1.18.0';
+  pTitle.textContent = '🦋 往生堂 · 雀魂教练 v' + (SCRIPT_VER || '?');
   const pBtn = document.createElement('span');
   pBtn.textContent = '—';
   pBtn.style.cssText = 'cursor:pointer;color:#8fa3c8;padding:0 6px;font-size:14px;';

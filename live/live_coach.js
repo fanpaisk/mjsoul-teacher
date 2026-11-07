@@ -1087,21 +1087,30 @@ if (TEST_ACTIONS) {
       }
     }
     if (req.method === 'OPTIONS') { res.end(); return; }
+    // 壁纸上传是二进制，不能走 body += chunk（Buffer→字符串会毁掉字节），单独收 chunks
+    const isUpload = req.url === '/api/wallpaper' && req.method === 'POST';
+    const limit = isUpload ? 64 * 1024 * 1024 : MAX_BODY;
     let body = '';
+    const chunks = [];
+    let size = 0;
     let tooBig = false;
     req.on('data', (c) => {
       if (tooBig) return;
-      body += c;
-      if (body.length > MAX_BODY) {
+      size += c.length;
+      if (size > limit) {
         tooBig = true;
         body = '';
         res.statusCode = 413;
         res.end('payload too large');
         try { req.destroy(); } catch (e) {}
+        return;
       }
+      if (isUpload) chunks.push(c);
+      else body += c;
     });
     req.on('end', () => {
       if (tooBig) return;
+      const rawBody = isUpload ? Buffer.concat(chunks) : null;
       try {
         if (req.method === 'GET' && req.url.startsWith('/panel')) {
           const m = /since=(\d+)/.exec(req.url);
@@ -1207,6 +1216,68 @@ if (TEST_ACTIONS) {
           res.end(JSON.stringify(r));
           return;
         }
+        // ---------- 壁纸（用户自传，存到 live/assets） ----------
+        // 面板固定请求 /assets/bg.mp4，而 /assets 路由返回的是"目录里最新的媒体文件"，
+        // 所以上传任意文件名都能生效；面板按该媒体的高宽比自适应高度。
+        if (req.url === '/api/wallpaper' && req.method === 'GET') {
+          const dirA = path.join(__dirname, 'assets');
+          let list = [];
+          try {
+            list = fs.readdirSync(dirA)
+              .filter(f => /\.(mp4|webm|png|jpe?g|webp|gif)$/i.test(f))
+              .map(f => { const st = fs.statSync(path.join(dirA, f)); return { name: f, bytes: st.size, at: st.mtimeMs }; })
+              .sort((a, b) => b.at - a.at);
+          } catch (e) {}
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true, current: list[0] || null, files: list }));
+          return;
+        }
+        if (req.url === '/api/wallpaper' && req.method === 'POST') {
+          const ct = String(req.headers['content-type'] || '').toLowerCase().split(';')[0].trim();
+          const EXT = {
+            'video/mp4': '.mp4', 'video/webm': '.webm',
+            'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
+          };
+          const ext = EXT[ct];
+          if (!ext) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: '只支持 mp4 / webm / png / jpg / gif / webp' }));
+            return;
+          }
+          if (!rawBody || rawBody.length < 1024) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: '文件为空或太小' }));
+            return;
+          }
+          const dirA = path.join(__dirname, 'assets');
+          try {
+            fs.mkdirSync(dirA, { recursive: true });
+            for (const f of fs.readdirSync(dirA)) {
+              if (/^wallpaper\./.test(f)) { try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {} }
+            }
+            const name = 'wallpaper' + ext;
+            fs.writeFileSync(path.join(dirA, name), rawBody);
+            out('壁纸已更新：' + name + '（' + Math.round(rawBody.length / 1048576 * 10) / 10 + ' MB），刷新游戏页生效');
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: true, name, bytes: rawBody.length }));
+          } catch (e) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ ok: false, error: e.message }));
+          }
+          return;
+        }
+        if (req.url === '/api/wallpaper' && req.method === 'DELETE') {
+          const dirA = path.join(__dirname, 'assets');
+          try {
+            for (const f of fs.readdirSync(dirA)) {
+              if (/^wallpaper\./.test(f)) { try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {} }
+            }
+          } catch (e) {}
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
         if (req.url === '/api/model/status') {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-store');
