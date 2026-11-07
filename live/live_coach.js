@@ -17,13 +17,230 @@ const args = process.argv.slice(2);
 const TEST = args.find(a => a.startsWith('--test='));
 const ARG_REVIEW = args.includes('--review');      // 复盘模式：切完牌才提醒
 const ARG_DARK = args.includes('--dark-tiles');    // 默认黑牌模式：牌面默认为黑，按住查看
+const ARG_V2 = args.includes('--v2') || args.includes('--v2-dry');  // v2.1 V1「只说不做」通道
+// v2.1 V2 执行层：**默认关闭**。开启后仍受四道闸门约束（分辨率/排序口径/校准表/点击前复检）。
+// 之所以做成显式开关而不是"有校准表就自动点"，是因为 V2 会真的打牌，误触代价是打错牌。
+const ARG_V2_ACTIONS = args.includes('--v2-actions');
 const TEST_ACTIONS = args.find(a => a.startsWith('--test-actions='));
 const OUT_FILE = path.join(__dirname, (TEST || TEST_ACTIONS) ? 'live_test_output.md' : 'live_coach.md');
 const OBS_LOG = path.join(__dirname, 'live_observed.log');
+
+// ---------- 标准化外壳（app/）：版本 / 路径 / 配置 / 错误文案 ----------
+// 用 try/catch 包住：即使 app/ 被裁掉，v1 主链路也必须能跑（同 initV2 的思路）。
+// 约定：业务代码**不要**再自己拼 __dirname 找文件、不要自己写中文错误句，
+// 一律走 APP.paths / APP.errors / APP.config —— 这是后续迭代与打包的解耦面。
+let APP = null;
+try {
+  APP = {
+    version: require('../app/version'),
+    paths: require('../app/paths'),
+    config: require('../app/config'),
+    errors: require('../app/errors'),
+    model: require('../app/model'),
+    update: require('../app/update'),
+    diag: require('../app/diag'),
+  };
+  APP.cfg = APP.config.applyCli(APP.config.load(), args);
+} catch (e) {
+  console.error('[app] 标准化模块加载失败，退回内置默认值：' + e.message);
+  APP = null;
+}
+const CFG = APP ? APP.cfg : null;
+
+// 日志轮转（重启不清空 live_observed.log；live_coach.md 仍按设计每次清空）
+try {
+  if (APP) {
+    APP.diag.rotate(OBS_LOG);
+    APP.diag.rotate(OUT_FILE, 5 * 1024 * 1024);
+  }
+} catch (e) {}
 try { fs.writeFileSync(OUT_FILE, ''); } catch (e) {} // 每次启动从新文件开始
 
+
+// ---------- v2.1 V1 通道（结构化建议 + 可执行性校验 + 审计日志；零注入） ----------
+// 用 try/catch 包住：v2 模块出问题绝不能拖垮 v1 的教练主链路。
+// 注意：初始化必须放在 out()/obs() 定义**之后**（曾经放在文件顶部，触发
+// "Cannot access 'PANEL' before initialization" —— const 的 TDZ，非 hoisted）。
+let V2 = null;
+function initV2() {
+  if (!ARG_V2) return;
+  try {
+    const core = require('./v2/v2core');
+    const prof = core.loadProfile();
+    const res = core.checkResolutionNow();
+    V2 = {
+      core,
+      captureSnapshot(S, seq) {
+        return {
+          handRaw: (S.hands && S.hands[S.seat] ? S.hands[S.seat] : []).slice(),
+          drawnRaw: S.lastDrawn || null,
+          kyoku: S.kyokuLabel || null,
+          junme: S.junme || null,
+          timeFixed: S.lastTimeFixed !== undefined ? S.lastTimeFixed : null,
+          account: S.account || 'default',
+          gameId: S.gameUuid || '',
+          reqSeq: seq,
+        };
+      },
+      publishFromVerdict(S, items, meta, kind, snap, tag) {
+        try {
+          if (!snap) return;
+          core.setAuditContext(snap.account, snap.gameId);
+          // 引擎候选：把 mjai 牌名转回雀魂原始名（映射层只认原始名）
+          const mapped = items.map(x => {
+            const label = x.label || '';
+            const raw = (x.pais && x.pais[0]) ? T2raw(x.pais[0]) : null;
+            return { label, pai: raw, value: x.value, pct: x.value, tiles: x.tiles, pais: x.pais };
+          });
+          const advice = core.buildAdvice({
+            kind,
+            handRaw: snap.handRaw,
+            drawnRaw: snap.drawnRaw,
+            items: mapped,
+            engineMeta: { qValues: (meta.q_values || meta.qvalues || null), maskBits: meta.mask_bits },
+            kyoku: snap.kyoku,
+            junme: snap.junme,
+            timeFixed: snap.timeFixed,
+            account: snap.account,
+            gameId: snap.gameId,
+            reqSeq: snap.reqSeq,
+          });
+          core.publish(advice, [tag]);
+          // V2：把"决策 → 映射 → 执行"这条链真正接上。
+          //
+          // ⚠ 这里的关键不是"点了没点"，而是**这条链有没有被真正跑通过**。
+          //   之前各层都是单独测的（映射层单测、执行层单测），但"服务端在真实决策点上
+          //   调用执行层"这条集成路径从未跑过 —— 这正是最容易藏 bug 的地方。
+          //   现在每次决策都会走完这条链：闸门 → 复检 → 桥。默认 allowActions=false，
+          //   所以链的终点是"被拒绝"，但**链本身被完整验证了**。
+          V2.maybeExecute(S, advice, snap);
+        } catch (e) { obs('v2 publish fail: ' + ((e && e.message) || e)); }
+      },
+      /**
+       * V2 执行：把建议里的落点交给执行层。
+       *
+       * 链的判定逻辑已抽到 v2core.runExecution()（那里可被离线单测覆盖）；
+       * 这里只提供"真实的"三个依赖：执行层、复检回调、审计写入。
+       * 所有分支（含"跳过"）都会落一条 exec 审计记录 —— 跳过也要有据可查，
+       * 否则未开 --v2-actions 时整条链跑了却没有任何痕迹。
+       */
+      maybeExecute(S, advice, snap) {
+        return core.runExecution({
+          advice,
+          exec: V2.exec || null,
+          recheck: () => V2.recheckBeforeClick(S, advice.decision.tile, advice.decision.slot),
+          writeAudit: core.writeAudit,
+          onResult: (info) => {
+            if (info.result === 'ok') {
+              out(`  ⚙ 已点击：${advice.decision.tileDisp} 位次${advice.decision.slot} `
+                + `(${advice.decision.point.x},${advice.decision.point.y})｜延时 ${advice.execAttempt.delayMs}ms`);
+            } else if (info.result !== 'skipped') {
+              out(`  ⚙ 未点击：${info.blockedReason}`);
+            }
+          },
+        });
+      },
+      /**
+       * 点击前复检（plan.md §3.1 强制）：用**当前**手牌重算 sorted，
+       * 确认目标位次上仍然是决策时那张牌。手牌在"决策→点击"之间可能已变。
+       */
+      recheckBeforeClick(S, expectedTile, slot) {
+        const hand = (S.hands && S.hands[S.seat] ? S.hands[S.seat] : []).slice();
+        const drawn = S.lastDrawn || null;
+        const M = require('./v2/mapping');
+        return M.recheck(slot, expectedTile, hand, drawn, core.v2.profile);
+      },
+      /**
+       * 记录"实际切了哪张"（审计 phase='actual'）。
+       * 用**切牌前**的手牌快照算位次，并与建议里的引擎名次对照。
+       * 这组数据能回答三件事：引擎首选与实打是否一致、实打落在哪个位次、
+       * 以及"教练建议被采纳了多少"——都是 plan.md §8 想要而此前完全缺失的。
+       */
+      recordActualDiscard(S, d, handBefore) {
+        const raw = d.tile;
+        if (!raw) return;
+        const hand = handBefore && handBefore.length
+          ? handBefore.slice()
+          : (S.hands[S.seat] || []).slice();
+        // handBefore 已包含这张牌（调用点做了 concat），所以排序后能直接定位到位次
+        const M2 = require('./v2/mapping');
+        const built = M2.buildHandRow(hand, S.lastDrawn || null, core.v2.profile);
+        let slot = null;
+        for (let k = built.sorted.length - 1; k >= 0; k--) {
+          if (built.sorted[k] === raw) { slot = k; break; }
+        }
+        const adv = core.v2.lastSelfAdvice;
+        let engineRank = null;
+        if (adv) {
+          // ⚠ 两边都要归一到"雀魂原始名"再比：advice 里的 tile 已被归一（'0m'），
+          //   而这里 raw 来自帧（可能是 '0m'，也可能经 T() 变成 mjai 名）。
+          //   赤5 上口径不一致会让"引擎名次"静默变成 null（误报成"不在推荐之列"）。
+          const want = M2.toRaw(raw);
+          const list = (adv.candidates || []).length
+            ? adv.candidates
+            : ((adv.engine && adv.engine.items) || []).map((it, i) => ({ rank: i + 1, tile: it.pai, action: /^Dahai /.test(it.label || '') ? 'Dahai' : null }));
+          const hit = list.find(c => c.action === 'Dahai' && M2.toRaw(c.tile) === want);
+          engineRank = hit ? hit.rank : null;
+        }
+        core.recordActual({
+          tile: raw,
+          slot,
+          kyoku: S.kyokuLabel || null,
+          junme: S.junme || null,
+          handBefore: hand,
+          sortedHand: built.sorted.map(t => M2.toRaw(t)),
+          engineRank,
+          // 关联用序号（junme 在一手内会重复，按巡配对会产生假的"位次不同"）
+          advSeq: core.pendingAdviceSeq(),
+          // 把"当时认为刚摸到的是哪张"也记下来（与 advice 记录的 drawnTile 是同一来源）：
+          // 复算器据此重算位次，并能直接暴露"快照与下游推导对同一张牌给出不同位次"
+          // 这类端到端漂移 —— 单元测试查不到，只有真实数据对拍才看得见。
+          drawnRaw: S.lastDrawn || null,
+        });
+        // 回灌到面板数据 → 面板上形成"建议 X 位次 n ／ 你切了 Y（引擎第 m 名）"的闭环，
+        // 这样 plan.md §9 的"逐手一致"核对可以直接在面板上完成
+        core.attachActual(core.pendingAdviceSeq(), { tile: raw, slot, engineRank });
+      },
+    };
+    core.v2.enabled = true;
+    // v2.1 V2 执行层（可选）：只有显式传 --v2-actions 才会启动输入桥
+    if (ARG_V2_ACTIONS) {
+      try {
+        const ex = require('./v2/exec');
+        V2.exec = ex;
+        ex.init(true).then((r) => {
+          if (r.ok) {
+            out(`⚙ 执行层已启用（allowActions=true）｜屏幕 ${r.screen.w}×${r.screen.h}｜DPI 模式 ${r.dpi && r.dpi.mode}`);
+            out(`  Kill switch = ${r.kill && r.kill.key}（按下后立即停止注入，需 resume 才恢复）`);
+          } else {
+            out(`⚠ 执行层启动失败：${r.reason}（将只说不做）`);
+          }
+        }).catch(e => out('⚠ 执行层初始化异常：' + ((e && e.message) || e)));
+      } catch (e) {
+        out('⚠ 执行层加载失败：' + ((e && e.message) || e));
+      }
+    }
+    out(`✓ v2.1 V1 通道已启用（只说不做，零注入）`);
+    out(`  校准表：${core.v2.profilePath}${prof.ok ? '' : '（读取失败，使用默认值：' + prof.error + '）'}`);
+    out(`  排序口径：${core.v2.profile.sortOrder}｜已确认=${!!core.v2.profile.sortOrderConfirmed}`
+      + `｜摸牌位偏移 drawnOffsetX=${core.v2.profile.drawnOffsetX === null ? '未校准' : core.v2.profile.drawnOffsetX}`);
+    if (res) for (const m of res.messages) out(`  ${res.ok ? '·' : '⚠'} ${m}`);
+  } catch (e) {
+    V2 = null;
+    out('⚠ v2.1 模块加载失败，退回 v1 行为：' + ((e && e.message) || e));
+  }
+}
+/** mjai 牌名 → 雀魂原始牌名（'5mr'→'0m'，'E'→'1z'）。映射层只接受原始名。 */
+function T2raw(t) {
+  if (!t || typeof t !== 'string') return t;
+  if (/^5[mps]r$/.test(t)) return '0' + t[1];
+  const back = { E: '1z', S: '2z', W: '3z', N: '4z', P: '5z', F: '6z', C: '7z' };
+  return back[t] || t;
+}
+
 // ---------- Mortal 引擎（Akagi 嵌入式 Python + bot.py） ----------
-const MORTAL_PY = path.join(__dirname, '..', 'engine', 'akagi', 'akagi-3.7.1-windows-x64', 'runtime', 'python', 'x86_64-pc-windows-msvc', 'python.exe');
+// 路径不再写死 akagi-3.7.1：见 app/paths.js（安装版 runtime/python、开发版 engine/akagi/<任意版本>）。
+const MORTAL_PY = APP ? APP.paths.pythonExe(CFG) : null;
 const MORTAL_BOT_DIR = path.join(__dirname, 'mjb');
 const MORTAL_BOT = path.join(MORTAL_BOT_DIR, 'bot.py');
 
@@ -51,6 +268,8 @@ function T(t) { return !t ? '?' : HON2[t] || (t[0] === '0' ? '5' + t[1] + 'r' : 
 
 // 悬浮面板数据环（最近 300 条输出，/panel 接口按序号增量拉取）
 const PANEL = { idx: 0, buf: [] };
+// 运行统计：设置向导判断"页面到底接没接上"，以及诊断包用
+const STATS = { frames: 0, bigFrames: 0, lastFrameAt: null, denied: 0, dropped: 0, rateWin: 0, rateN: 0, scriptVersion: null, verWarned: false };
 function out(line) {
   fs.appendFileSync(OUT_FILE, line + '\n');
   console.log(line);
@@ -61,10 +280,20 @@ function obs(msg) {
   try { fs.appendFileSync(OBS_LOG, new Date().toISOString().slice(11, 19) + ' ' + msg + '\n'); } catch (e) {}
 }
 
+// v2.1 V1 通道在此初始化：out()/obs() 都已就绪（见 initV2 定义处的 TDZ 说明）
+initV2();
+
 // ---------- 用户偏好（复盘模式等） ----------
 // ---------- Mortal 引擎管理 ----------
 function mortalStart() {
   try { if (MORTAL.proc) MORTAL.proc.kill(); } catch (e) {}
+  // 找不到 Python 时**不要**静默重试 8 次：那是"看起来在跑其实没引擎"的经典死法。
+  // 直接给一条可操作的中文提示并停用本场（下局用户修好后自动恢复）。
+  if (!MORTAL_PY) {
+    MORTAL.gaveUp = true;
+    out(APP ? APP.errors.line('PYTHON_MISSING') : '⚠ 引擎无法启动：找不到 Python 运行时（见 docs/PLAN-packaging.md）');
+    return false;
+  }
   MORTAL.restarts++;
   if (MORTAL.restarts > 8) {
     MORTAL.gaveUp = true;
@@ -87,7 +316,11 @@ function mortalStart() {
   MORTAL.proc.on('exit', (c) => {
     MORTAL.dead = true;
     for (const cb of MORTAL.pending.splice(0)) cb(null);
-    if (S.inGame) out('⚠ Mortal 引擎退出（code ' + c + '），下次出牌自动重启…');
+    if (S.inGame) {
+      const m = APP ? APP.paths.model() : null;
+      out(APP ? APP.errors.engineExit(c, { hadModel: !!(m && m.file), modelLabel: m && m.label })
+        : '⚠ Mortal 引擎退出（code ' + c + '），下次出牌自动重启…');
+    }
   });
   MORTAL.proc.stdin.on('error', () => {});
   return true;
@@ -139,6 +372,9 @@ try {
   if (typeof st.reviewMode === 'boolean') S.reviewMode = st.reviewMode;
   if (typeof st.tileDark === 'boolean') S.tileDark = st.tileDark;
 } catch (e) {}
+// config.json（app/config.js）优先于旧 coach_settings.json；命令行最后覆盖
+if (CFG && CFG.mode) S.reviewMode = CFG.mode === 'review';
+if (CFG && CFG.tileDark) S.tileDark = true;
 if (ARG_REVIEW) S.reviewMode = true;
 if (ARG_DARK) S.tileDark = true;
 
@@ -201,6 +437,30 @@ function bootstrapFromPending() {
   return dealerDraw;
 }
 
+// ---------- v2.1：思考时限记录（只读，不调度） ----------
+/**
+ * 帧里带 OptionalOperationList 的时机才有 time_fixed（实测：自摸 8000ms、他家切牌后 5000ms）。
+ * v1 一个都没读；v2.1 先把它记录下来，供审计日志与将来的调度层使用。
+ */
+function recordTimeLimit(d, name) {
+  const op = d && d.operation;
+  if (!op) return;
+  if (op.time_fixed !== undefined) {
+    S.lastTimeFixed = op.time_fixed;
+    S.deadline = Date.now() + op.time_fixed;
+  }
+  if (op.time_add !== undefined) S.lastTimeAdd = op.time_add;
+  // P0-2：记录当前可执行动作集（v1 只判断 operation_list 真值，从不看里面是什么）。
+  // 关键：带上当时的决策序号 reqSeq —— offer 只在**同一个决策点**内有效，
+  // 否则会拿"别人切牌时我能吃碰"的 offer 去校验"我摸牌后自由切牌"，把正常切牌判成非法。
+  if (V2) {
+    try {
+      const offer = V2.core.setOffer(op.operation_list, S.reqSeq);
+      obs(`offer@${name} seq=${S.reqSeq}: [${offer.actions.join(',')}] confirmed=${offer.confirmed}`);
+    } catch (e) { obs('setOffer fail: ' + ((e && e.message) || e)); }
+  }
+}
+
 // ---------- 决策请求（promise 链串行化，引擎恰好消费每个事件一次） ----------
 let adviseChain = Promise.resolve();
 function requestAdvice(drawn, kind, endOffset, actual) {
@@ -219,6 +479,9 @@ function requestAdvice(drawn, kind, endOffset, actual) {
         : '推荐：';
   const suppressStale = !(TEST || TEST_ACTIONS || S.reviewMode); // 复盘模式下每手都要出现
   const upto = S.mjaiBuffer.length - Math.max(0, endOffset || 0); // 批次边界在请求时固定（决策点语义位置）
+  // v2.1：决策点快照。必须在**同步阶段**取，因为 await 之后手牌可能已经变了
+  // （这正是 plan.md §10 第 3 条"快照校验"要防的事，也让审计日志能离线复算）。
+  const snap = V2 ? V2.captureSnapshot(S, mySeq) : null;
   adviseChain = adviseChain.then(async () => {
     if (!S.inGame || S.resyncing || S.kyokuEngineBanned || !S.kyokuActive) return;
     if (MORTAL.gaveUp) return; // 本场已放弃，静默记录
@@ -231,7 +494,7 @@ function requestAdvice(drawn, kind, endOffset, actual) {
     const resp = await mortalSend(batch);
     MORTAL.sentUpTo = upto;
     if (suppressStale && mySeq !== S.reqSeq) { obs(`stale verdict seq=${mySeq} cur=${S.reqSeq}`); return; }
-    onMortalVerdict(resp, tag, kind, drawn, actual);
+    onMortalVerdict(resp, tag, kind, actual, snap);
   }).catch(e => obs('advise error: ' + ((e && e.message) || e)));
 }
 
@@ -257,7 +520,7 @@ function itemStr(x) {
   const extra = x.pais && x.pais[0] ? ' ' + disp(x.pais[0]) : '';
   return cn + extra + ' ' + v;
 }
-function onMortalVerdict(resp, tag, kind, actual) {
+function onMortalVerdict(resp, tag, kind, actual, snap) {
   let mv = null;
   try { mv = JSON.parse(resp); } catch (e) {}
   if (!mv) { out('⚠ 引擎无响应，自主判断'); return; }
@@ -281,6 +544,8 @@ function onMortalVerdict(resp, tag, kind, actual) {
   }
   out(tag + items.map(itemStr).join(' ｜ '));
   S.lastAdvice = items.map((x, i) => ({ tile: (x.pais || [])[0], rank: i + 1, value: x.value || '' }));
+  // v2.1 V1：发布结构化建议（含位次/坐标/可否点击），走长轮询通道；文字行通道照旧
+  if (V2) V2.publishFromVerdict(S, items, meta, kind, snap, tag);
   if (kind === 'review-op' && actual) {
     const wantLabel = ({ chi: 'Chi', pon: 'Pon', kan: 'Daiminkan', ron: 'Ron', skip: 'Skip' })[actual.type] || 'Skip';
     const cn = ({ chi: '吃', pon: '碰', kan: '明杠', ron: '荣和', skip: '跳过' })[actual.type] || actual.type;
@@ -421,6 +686,9 @@ function handleAction(name, d) {
 
   if (name === 'ActionDealTile') {
     diffDoras(d.doras);
+    // v2.1 P0-1：记录本帧的思考时限。v1 从不读 time_fixed，导致任何延时方案都无法与真实
+    // 时限对齐（plan.md §7：上限须守 time_fixed − 1000ms）。这里只记录，不做调度。
+    recordTimeLimit(d, name);
     // 漏帧守恒检查：客户端报的牌山剩余数每次摸牌应恰好 -1，对不上 = 漏帧
     if (d.left_tile_count !== undefined) {
       if (S.expLeft === null || S.expLeft === undefined) {
@@ -476,6 +744,7 @@ function handleAction(name, d) {
 
   if (name === 'ActionDiscardTile') {
     diffDoras(d.doras);
+    recordTimeLimit(d, name);
     const s = d.seat;
     const pai = T(d.tile);
     if (s === S.seat) {
@@ -484,6 +753,13 @@ function handleAction(name, d) {
       if (S.lastAdvice) {
         const c = S.lastAdvice.find(x => x.tile === pai);
         out(`  你切了 ${disp(pai)}` + (c ? `（Mortal 第 ${c.rank} 名 ${c.value}）` : '（不在推荐之列）'));
+      }
+      // v2.1：把"你实际切了哪张"也写进审计日志（phase='actual'）。
+      // 注意取的是**删除前**的手牌快照 —— note 里的位次必须按切牌前的手牌算。
+      if (V2) {
+        try {
+          V2.recordActualDiscard(S, d, i >= 0 ? S.hands[s].concat([d.tile]) : null);
+        } catch (e) { obs('v2 recordActual fail: ' + ((e && e.message) || e)); }
       }
       S.lastAdvice = null;
       S.lastDrawn = null;
@@ -745,16 +1021,87 @@ if (TEST_ACTIONS) {
   out('===== 重放结束（等待引擎收尾…） =====');
   setTimeout(() => process.exit(0), 5000);
 } else {
+  const PORT_EARLY = CFG ? CFG.port : 18766;
+
+  // ---------- 安全边界（P0）----------
+  // 之前这里对所有响应都发 Access-Control-Allow-Origin: *，等于把本地端口交给任何网页：
+  //   · 任意网站可以读 /panel（你的手牌与建议）、改设置、伪造 /frame
+  //   · 再配合"配置无校验 + pythonExe 会被 spawn"，能串成本地任意程序执行
+  // 现在三层闸门：
+  //   1) Host 白名单 —— 防 DNS rebinding（恶意域名解析到 127.0.0.1 时浏览器仍发 Host: evil.com）
+  //   2) Origin 白名单 —— 恶意网页的跨源请求必带 Origin；油猴 GM 请求不带或带扩展 scheme
+  //   3) 请求体上限 —— 以前 req.on('data') 无上限，一个网页就能把内存打满
+  const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT_EARLY}`, `localhost:${PORT_EARLY}`, `[::1]:${PORT_EARLY}`]);
+  const OK_ORIGINS = new Set([
+    `http://127.0.0.1:${PORT_EARLY}`, `http://localhost:${PORT_EARLY}`,
+    'https://game.maj-soul.com', 'https://game.mahjongsoul.com',
+    'https://majsoul.com', 'https://www.majsoul.com',
+  ]);
+  const MAX_BODY = 1024 * 1024;   // 1 MB：/frame 的 hex 上限 256KB（≈512KB 文本），够用
+  const FRAME_PER_SEC = 300;      // 每秒帧数上限（真实对局每秒十几帧，给足余量）
+
+  // 本地页面的 CSP：这些页面只有我们自己的内联脚本，不需要任何外部资源
+  function setCsp(res) {
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  }
+
+  function originVerdict(origin, url) {
+    if (!origin) return 'allow';                    // 油猴 GM 请求不带 Origin
+    if (OK_ORIGINS.has(origin)) return 'allow';     // 雀魂页面自身 / 本机页面
+    if (/^(chrome|moz|safari-web)-extension:\/\//.test(origin)) return 'allow'; // 扩展后台请求
+    // Origin: null（沙箱 iframe）—— 某些油猴版本会这么发。
+    // 允许它读/发帧（否则可能把正常用户挡在外面），但**任何 /api/ 写操作一律拒绝**：
+    // 写操作才是"能造成后果"的那一类（改配置、触发下载、导诊断包）。
+    if (origin === 'null') return /^\/api\//.test(url || '') ? 'deny' : 'allow';
+    return 'deny';
+  }
+
   const server = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    // 浏览器私有网络访问（PNA）探测：网页 → 127.0.0.1 需要服务端明确许可
-    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    const host = req.headers.host || '';
+    if (host && !LOCAL_HOSTS.has(host)) {
+      obs(`拒绝非法 Host：${host} ${req.method} ${req.url}`);
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.end('forbidden host');
+      return;
+    }
+    const origin = req.headers.origin;
+    if (originVerdict(origin, req.url) === 'deny') {
+      STATS.denied++;
+      obs(`拒绝跨源请求：origin=${origin} ${req.method} ${req.url}`);
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.end('forbidden origin');
+      return;
+    }
+    // 只对白名单来源回 CORS 头
+    if (origin && OK_ORIGINS.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+      if (req.headers['access-control-request-private-network'] === 'true') {
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
+      }
+    }
     if (req.method === 'OPTIONS') { res.end(); return; }
     let body = '';
-    req.on('data', c => body += c);
+    let tooBig = false;
+    req.on('data', (c) => {
+      if (tooBig) return;
+      body += c;
+      if (body.length > MAX_BODY) {
+        tooBig = true;
+        body = '';
+        res.statusCode = 413;
+        res.end('payload too large');
+        try { req.destroy(); } catch (e) {}
+      }
+    });
     req.on('end', () => {
+      if (tooBig) return;
       try {
         if (req.method === 'GET' && req.url.startsWith('/panel')) {
           const m = /since=(\d+)/.exec(req.url);
@@ -812,9 +1159,234 @@ if (TEST_ACTIONS) {
           } catch (e) { res.statusCode = 404; res.end(''); }
           return;
         }
+        // 一键安装/更新页面脚本：Tampermonkey 见到 .user.js 结尾的地址会弹安装页。
+        // 版本在这里注入（package.json 是唯一来源），避免"服务端 v1.25 / 脚本 v1.24"的静默错配。
+        if (req.url === '/coach.user.js') {
+          try {
+            const src = APP ? APP.paths.userscript() : path.join(__dirname, 'coach_hook.user.js');
+            let body = fs.readFileSync(src, 'utf8');
+            const ver = APP ? APP.version.version : null;
+            if (ver) body = body.replace(/^(\/\/\s*@version\s+).*$/m, '$1' + ver);
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.end(body);
+          } catch (e) {
+            res.statusCode = 500;
+            res.end('userscript not found');
+          }
+          return;
+        }
+
+        // ---------- 设置向导 / 设置页（内置网页，不联网） ----------
+        if (req.method === 'GET' && (req.url === '/' || req.url === '/setup' || req.url === '/settings')) {
+          const page = req.url === '/settings' ? 'settings.html' : 'setup.html';
+          try {
+            const html = fs.readFileSync(path.join(APP.paths.webDir(), page), 'utf8');
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            setCsp(res);
+            res.end(html);
+          } catch (e) {
+            res.statusCode = 500;
+            res.end('页面缺失：' + page);
+          }
+          return;
+        }
+        if (req.url === '/api/settings' && req.method === 'POST') {
+          let patch = {};
+          try { patch = JSON.parse(body || '{}'); } catch (e) {}
+          const chk = APP.config.sanitize(patch, APP.paths.ROOT);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          if (!chk.ok) {
+            obs(`拒绝设置请求：${chk.error}`);
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: chk.error }));
+            return;
+          }
+          const r = APP.config.save(chk.value);
+          res.end(JSON.stringify(r));
+          return;
+        }
+        if (req.url === '/api/model/status') {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify(APP.model.status()));
+          return;
+        }
+        if (req.url === '/api/model/download' && req.method === 'POST') {
+          const r = APP.model.start(APP.paths.ROOT);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(r));
+          return;
+        }
+
+        if (req.url.startsWith('/api/update')) {
+          // 只有用户点"检查更新"才会走到这里（默认不联网）
+          Promise.resolve(APP.update.check(APP.version.version)).then((r) => {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.end(JSON.stringify(r));
+          }).catch((e) => {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }));
+          });
+          return;
+        }
+        if (req.url === '/api/diag/export' && req.method === 'POST') {
+          const r = APP.diag.exportBundle({
+            root: APP.paths.ROOT,
+            version: APP.version.version,
+            diagnostics: APP.paths.diagnostics(CFG),
+            cfg: CFG,
+            port: CFG ? CFG.port : 18766,
+          });
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(r));
+          return;
+        }
+
         if (req.url === '/config') {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify({ review: !!S.reviewMode, tileDark: !!S.tileDark }));
+          const diag = APP ? APP.paths.diagnostics(CFG) : null;
+          res.end(JSON.stringify({
+            version: APP ? APP.version.version : null,
+            product: APP ? APP.version.productName : null,
+            mode: S.reviewMode ? 'review' : 'realtime',
+            review: !!S.reviewMode, tileDark: !!S.tileDark,
+            port: CFG ? CFG.port : 18766,
+            frames: STATS.frames,
+            lastFrameAt: STATS.lastFrameAt,
+            denied: STATS.denied,
+            dropped: STATS.dropped,
+            scriptVersion: STATS.scriptVersion || null,
+            engine: diag ? {
+              python: diag.python, pythonFound: diag.pythonFound,
+              model: diag.model, modelLabel: diag.modelLabel, modelSizeMB: diag.modelSizeMB,
+              vcRuntime: diag.vcRuntime,
+            } : null,
+            v2: !!V2,
+            v2version: V2 ? '2.1-V1' : null,
+            sortOrder: V2 ? V2.core.v2.profile.sortOrder : null,
+            sortOrderConfirmed: V2 ? !!V2.core.v2.profile.sortOrderConfirmed : null,
+            drawnOffsetX: V2 ? V2.core.v2.profile.drawnOffsetX : null,
+            resolutionOk: V2 ? !!(V2.core.v2.resolution && V2.core.v2.resolution.ok) : null,
+          }));
+          return;
+        }
+
+        // ---------- v2.1 V1 通道 ----------
+        // 长轮询：有建议立即返回，否则挂起至多 wait 毫秒（事件唤醒，不是 1500ms 定时采样）
+        if (V2 && req.url.startsWith('/v2/advice')) {
+          const ms = /since=(\d+)/.exec(req.url);
+          const wm = /wait=(\d+)/.exec(req.url);
+          const since = ms ? +ms[1] : 0;
+          const waitMs = wm ? +wm[1] : 20000;
+          // latest=1：立刻返回当前最新建议（面板刚挂载时用）。
+          // 注意：没有建议时也必须**立刻**回一个空对象，不能落到长轮询去挂 20 秒——
+          // 否则面板首次连接会白等（实测挂满 10 秒以上）。
+          if (/latest=1/.test(req.url)) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(V2.core.v2.latest || { seq: V2.core.v2.seq, none: true }));
+            return;
+          }
+          V2.core.waitFor(since, waitMs).then((a) => {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(a || { seq: V2.core.v2.seq, none: true }));
+          }).catch(() => { res.statusCode = 500; res.end('err'); });
+          return;
+        }
+        // 结构化状态：给"逐手核对"用的可读文本视图（不依赖任何图像能力）
+        if (V2 && req.url.startsWith('/v2/state')) {
+          const asText = /text=1/.test(req.url);
+          const a = V2.core.v2.latest;
+          if (!asText) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({
+              seq: V2.core.v2.seq, stats: V2.core.v2.stats,
+              resolution: V2.core.v2.resolution, screen: V2.core.v2.screen,
+              profile: V2.core.v2.profile, offer: V2.core.v2.offer, advice: a,
+            }));
+            return;
+          }
+          const L = [];
+          L.push(`seq=${V2.core.v2.seq} 发布时间=${a ? new Date(a.ts).toLocaleTimeString('zh-CN') : '-'} 类型=${a ? a.kind : '-'} 局=${a ? a.kyoku : '-'} 巡=${a ? a.junme : '-'}`);
+          if (V2.core.v2.screen) L.push(`屏幕(物理像素)=${V2.core.v2.screen.width}×${V2.core.v2.screen.height} @${Math.round(V2.core.v2.screen.scale * 100)}%  分辨率校验=${V2.core.v2.resolution && V2.core.v2.resolution.ok ? '通过' : '不通过'}`);
+          if (a) {
+            L.push(`手牌(已排序)=${a.sortedDisp.map((t, i) => i + ':' + t).join(' ')}`);
+            L.push(`手牌(原始序)=${a.handDisp.join(' ')}   刚摸到=${a.drawnSlot === null ? '-' : '位次' + a.drawnSlot}`);
+            if (a.note) L.push(`提示：${a.note}`);
+            L.push('位次 → 坐标：');
+            for (const s of a.slots) L.push(`  [${String(s.i).padStart(2)}] ${s.disp.padEnd(4)} x=${s.x === null ? '--' : s.x} y=${s.y} ${s.blocked ? '⛔' : '✓'}${s.isDrawn ? ' ←刚摸到' : ''}`);
+            L.push('引擎候选：');
+            for (const c of a.candidates) L.push(`  #${c.rank} ${c.label} value=${c.value} 位次=${c.slot} 落点=(${c.point.x},${c.point.y}) ${c.clickable ? '可点' : '不可点：' + (c.point.reason || '')}`);
+            L.push(`决策（若自动）：${a.decision ? `${a.decision.tileDisp} 位次${a.decision.slot} 落点(${a.decision.point.x},${a.decision.point.y}) wouldClick=${a.decision.wouldClick}` : '-'}`);
+            L.push(`可执行性：${a.executable.ok ? '通过' : '不通过：' + a.executable.reason}｜offer=${a.offer ? '[' + a.offer.actions.join(',') + ']' : '无'}`);
+            // 建议 → 实打 的闭环（V1 逐手核对就靠这一行）
+            if (a.actual) {
+              const rk = a.actual.engineRank;
+              L.push(`你实际切了：${a.actual.tileDisp}（位次 ${a.actual.slot}）｜`
+                + (rk ? `Mortal 第 ${rk} 名` : '不在 Mortal 推荐之列')
+                + `｜建议是 ${a.decision ? a.decision.tileDisp + ' 位次' + a.decision.slot : '-'}`);
+            }
+            L.push(`闸门：${a.gating.length ? a.gating.join(' ｜ ') : '无（V1 零注入，无论如何都不会点击）'}`);
+            L.push(`time_fixed=${a.timeFixed} deadline=${a.deadline ? new Date(a.deadline).toLocaleTimeString('zh-CN') : '-'}`);
+          } else {
+            L.push('（还没有建议：需要在 --v2 模式下打一手）');
+          }
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end(L.join('\n') + '\n');
+          return;
+        }
+        // 校准：列出当前校准表 / 写入字段（用户实机标定后用）
+        if (V2 && req.url.startsWith('/v2/calib')) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          if (req.method === 'GET') {
+            res.end(JSON.stringify({ profile: V2.core.v2.profile, resolution: V2.core.v2.resolution, screen: V2.core.v2.screen }, null, 1));
+            return;
+          }
+          // POST: {"drawnOffsetX":41} / {"sortOrder":"num-major","sortOrderConfirmed":true} / {...}
+          let patch = {};
+          try { patch = JSON.parse(body || '{}'); } catch (e) { res.statusCode = 400; res.end('bad json'); return; }
+          if (patch.drawnOffsetX !== undefined && patch.drawnOffsetX !== null) {
+            patch.drawnOffsetX = Math.round(Number(patch.drawnOffsetX));
+            if (!isFinite(patch.drawnOffsetX)) { res.statusCode = 400; res.end('drawnOffsetX 非法'); return; }
+          }
+          const r = V2.core.saveProfile(patch);
+          out(`⚙ 校准表已更新：${JSON.stringify(patch)} → ${r.ok ? '已落盘 ' + V2.core.v2.profilePath : '失败：' + r.error}`);
+          res.end(JSON.stringify({ ok: r.ok, error: r.error || null, profile: V2.core.v2.profile }));
+          return;
+        }
+        // 重新校验分辨率（用户切窗口后调用）
+        if (V2 && req.url === '/v2/recheck-resolution') {
+          const r = V2.core.checkResolutionNow();
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ result: r, screen: V2.core.v2.screen }));
+          return;
+        }
+        // v2.1 V2 执行层状态 / 内部控制
+        if (V2 && req.url.startsWith('/v2/exec')) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          if (!V2.exec) { res.end(JSON.stringify({ enabled: false, note: '执行层未启用（需 --v2-actions 启动）' })); return; }
+          if (req.method === 'POST') {
+            let body2 = {};
+            try { body2 = JSON.parse(body || '{}'); } catch (e) {}
+            const act = body2.action;
+            if (act === 'stop') { V2.exec.stop().then(r => res.end(JSON.stringify(r))); return; }
+            if (act === 'resume') { V2.exec.resume().then(r => res.end(JSON.stringify(r))); return; }
+            if (act === 'ping') { V2.exec.status().then(r => res.end(JSON.stringify(r))); return; }
+            res.end(JSON.stringify({ ok: false, reason: '未知 action（可用 stop/resume/ping）' }));
+            return;
+          }
+          res.end(JSON.stringify(V2.exec.snapshot()));
+          return;
+        }
+        // 校准 CLI 的只读接口：读鼠标物理坐标（标定用，不产生输入）
+        if (V2 && req.url.startsWith('/v2/cursor')) {
+          try {
+            const osprobe = require('./v2/osprobe');
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(osprobe.cursorPos()));
+          } catch (e) { res.statusCode = 500; res.end('err'); }
           return;
         }
         if (req.url === '/announce') {
@@ -823,27 +1395,133 @@ if (TEST_ACTIONS) {
           res.end('ok');
           return;
         }
-        if (req.url === '/frame') {
+        // v2.1 几何探针上报：只读快照，落盘供 V0 校准使用，不参与决策
+        if (req.url === '/frame' && body.indexOf('"_probe"') >= 0) {
           const f = JSON.parse(body);
+          const rep = f.report || {};
+          const v2dir = path.join(__dirname, 'v2');
+          try {
+            fs.appendFileSync(path.join(v2dir, 'probe_geometry.jsonl'), JSON.stringify(f) + '\n');
+            S.lastProbe = rep;
+            if (rep.note === 'mark-cursor' || rep.req === 'GetCursorPos') {
+              // 用户按 F7：读取真实鼠标物理坐标（必须 DPI-aware）
+              const osprobe = require('./v2/osprobe');
+              const pos = osprobe.cursorPos();
+              const scr = osprobe.screenInfo();
+              const rec = { ts: new Date().toISOString(), kind: 'cursor-mark', ...pos, ...scr };
+              fs.appendFileSync(path.join(v2dir, 'calibration_marks.jsonl'), JSON.stringify(rec) + '\n');
+              out(`📍 标定点：鼠标物理坐标 (${pos.x}, ${pos.y})｜屏幕 ${scr.width}×${scr.height} @${Math.round(scr.scale * 100)}%`);
+            } else if (rep.note === 'list-windows' || rep.req === 'EnumWindows') {
+              const osprobe = require('./v2/osprobe');
+              const list = osprobe.listWindows(80).filter(w => w.w > 0 && w.h > 0);
+              fs.writeFileSync(path.join(v2dir, 'windows.json'), JSON.stringify(list, null, 1));
+              out(`🪟 窗口清单（按 Z 序，仅列出有面积的）：共 ${list.length} 个`);
+              for (const w of list.slice(0, 12)) {
+                out(`   z=${String(w.z).padStart(2)} ${String(w.proc).slice(0, 16).padEnd(16)} `
+                  + `${w.w}×${w.h} @${w.l},${w.t} dpi=${w.dpi} ${String(w.title).slice(0, 28)}`);
+              }
+            } else {
+              const scr = { width: rep.innerWidth, height: rep.innerHeight, dpr: rep.devicePixelRatio, vv: rep.vvScale };
+              try { fs.writeFileSync(path.join(v2dir, 'screen.json'), JSON.stringify(rep, null, 1)); } catch (e) {}
+              const hr = rep.handRow || {};
+              out(`🔍 几何快照（${rep.note || '?'}）：页面视口 ${scr.width}×${scr.height} dpr=${scr.dpr}｜`
+                + `牌行矩形 ${hr.count || 0} 个`
+                + (hr.firstCenter !== undefined
+                  ? `，首中心 ${hr.firstCenter}、末中心 ${hr.lastCenter}、行中心Y ${hr.rowCenterY}、末位中心距 ${hr.lastGap}`
+                  : `（${hr.reason || '无'}）`));
+              if (hr.deltas) out(`   与公式逐位偏差：${JSON.stringify(hr.deltas)}`);
+              // 校准结论：把实测牌行与公式对拍，直接算出 pitch / y / drawnOffsetX 的实测值
+              if (hr.centers && hr.centers.length >= 4) {
+                const M = require('./v2/mapping');
+                const c = hr.centers;
+                const pitch = (c[c.length - 2] - c[0]) / (c.length - 2); // 末位不参与（可能是摸牌位）
+                const y = hr.rowCenterY;
+                const base = M.DEFAULT_PROFILE.hand;
+                const fitErr = Math.max(...c.slice(0, c.length - 1).map((v, i) => Math.abs(v - (base.x0 + pitch * i))));
+                out(`   ▶ 实测拟合：pitch=${pitch.toFixed(2)}（公式 ${base.pitch}）｜行中心Y=${y}（公式 ${base.y}）`
+                  + `｜逐位最大残差 ${fitErr.toFixed(2)}px`);
+                const lastDelta = c[c.length - 1] - (base.x0 + pitch * (c.length - 1));
+                if (c.length === 14) {
+                  out(`   ▶ 第 14 位（摸到的牌）相对均匀网格偏移 = ${lastDelta.toFixed(1)}px`
+                    + ` → 若稳定在 +40 附近，可写入校准表 drawnOffsetX=${Math.round(lastDelta)}`);
+                } else if (Math.abs(lastDelta) > 5) {
+                  out(`   ⚠ 末位相对均匀网格偏移 ${lastDelta.toFixed(1)}px（手牌 ${c.length} 张，非 14 张，可能是鸣牌状态）`);
+                }
+                try {
+                  fs.writeFileSync(path.join(v2dir, 'calibration_report.json'), JSON.stringify({
+                    ts: new Date().toISOString(), note: rep.note,
+                    viewport: { w: rep.innerWidth, h: rep.innerHeight, dpr: rep.devicePixelRatio },
+                    measured: { pitch: +pitch.toFixed(3), rowCenterY: y, maxResidual: +fitErr.toFixed(2), lastDelta: +lastDelta.toFixed(1) },
+                    centers: c,
+                    formula: base,
+                  }, null, 1));
+                } catch (e) {}
+              }
+            }
+          } catch (e) {
+            obs('probe handle fail: ' + e.message + ' | ' + (e.stack || '').split('\n').slice(0, 2).join(' <- '));
+          }
+          res.end('ok');
+          return;
+        }
+        if (req.url === '/frame') {
+          // 速率限制：只靠体积上限挡不住"小包洪水"（每秒几千个 100 字节的包同样能顶满 CPU）
+          const sec = Math.floor(Date.now() / 1000);
+          if (sec !== STATS.rateWin) { STATS.rateWin = sec; STATS.rateN = 0; }
+          if (++STATS.rateN > FRAME_PER_SEC) {
+            STATS.dropped++;
+            res.statusCode = 429;
+            res.end('too many frames');
+            return;
+          }
+          const f = JSON.parse(body);
+          // 帧体校验：hex 必须是字符串且不超 256KB（油猴侧 MAX=262144）—— 否则一个畸形请求就能让解码器吃满 CPU
+          if (typeof f.hex !== 'string' || f.hex.length > 600000) {
+            res.statusCode = 400;
+            res.end('bad frame');
+            return;
+          }
+          STATS.frames++;                       // 设置向导第 4 步靠它判断"页面接通了"
+          STATS.lastFrameAt = Date.now();
+          STATS.bigFrames += (f.hex && f.hex.length > 32000) ? 1 : 0;
+          // 版本握手：脚本版本与服务端不一致时说一句（这类错配否则完全静默，是最难查的一类）
+          if (f.v) STATS.scriptVersion = f.v;
+          if (APP && f.v && f.v !== APP.version.version && !STATS.verWarned) {
+            STATS.verWarned = true;
+            out(APP.errors.line('USERSCRIPT_STALE') + `（脚本 v${f.v} / 服务端 v${APP.version.version}）`);
+          }
           handleFrame(f.dir, f.url || '', f.hex);
         }
         res.end('ok');
-      } catch (e) { res.statusCode = 500; res.end('err'); }
+      } catch (e) {
+        // 保留可诊断性：以前这里只回 'err'，导致探针出错时无从查起
+        obs(`http fail: ${req.method} ${req.url} — ${e.message}`);
+        res.statusCode = 500; res.end('err');
+      }
     });
   });
   server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
-      console.log('✓ 教练服务端已经在运行了，无需重复启动。');
-      console.log('  （本窗口可以直接关闭）');
+      if (APP) { console.log(APP.errors.line('PORT_IN_USE')); }
+      else { console.log('✓ 教练服务端已经在运行了，无需重复启动。（本窗口可以直接关闭）'); }
       process.exit(0);
     }
     throw e;
   });
-  server.listen(18766, '127.0.0.1', () => {
+  const PORT = CFG ? CFG.port : 18766;
+  server.listen(PORT, '127.0.0.1', () => {
+    const ver = APP ? APP.version.display() : '雀魂实时教练';
+    const diag = APP ? APP.paths.diagnostics(CFG) : null;
     out('============================================');
-    out('  雀魂实时教练已启动（中继 127.0.0.1:18766）');
-    out('  决策引擎: Mortal 本地神经网络');
+    out('  ' + ver + ' 已启动（中继 127.0.0.1:' + PORT + '）');
+    out('  决策引擎: Mortal 本地神经网络' + (diag ? ' · ' + diag.modelLabel : ''));
     out('  实时输出: ' + OUT_FILE);
+    if (diag) {
+      if (!diag.pythonFound) out(APP.errors.line('PYTHON_MISSING'));
+      if (diag.model === 'none') out(APP.errors.line('MODEL_NONE'));
+      else if (diag.model === 'lite') out(APP.errors.line('MODEL_LITE'));
+    }
+    out('  页面脚本: http://127.0.0.1:' + PORT + '/coach.user.js');
     out('============================================');
   });
 }

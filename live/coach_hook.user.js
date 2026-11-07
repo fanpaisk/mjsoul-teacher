@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.24.0
+// @version      1.25.1
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -10,8 +10,11 @@
 // @run-at       document-start
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
+// @grant        GM_info
 // @connect      127.0.0.1
 // @connect      localhost
+// @updateURL    https://raw.githubusercontent.com/fanpaisk/mjsoul-teacher/main/live/coach_hook.user.js
+// @downloadURL  https://raw.githubusercontent.com/fanpaisk/mjsoul-teacher/main/live/coach_hook.user.js
 // ==/UserScript==
 
 (() => {
@@ -21,6 +24,9 @@
   if (W.__liveHook) return;
   W.__liveHook = { frames: 0, errors: 0, posted: 0, bytes: 0, big: 0, viaGM: typeof GM_xmlhttpRequest === 'function' };
   const RELAY = 'http://127.0.0.1:18766/frame';
+  // 自身版本：由 Tampermonkey 提供（服务端在 /coach.user.js 里注入 @version），
+  // 随每帧带上，服务端版本不一致时会在面板上明确提示 —— 否则这种错配是完全静默的。
+  const SCRIPT_VER = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || null;
   const MAX = 262144; // 256KB：完整转发，绝不截断
   const toHex = (u8) => {
     let h = '';
@@ -54,7 +60,7 @@
         W.__liveHook.frames++;
         W.__liveHook.bytes += u8.length;
         if (u8.length > 8192) W.__liveHook.big++;
-        post({ dir, url: String((ws && ws.url) || ''), hex: toHex(u8) });
+        post({ dir, url: String((ws && ws.url) || ''), hex: toHex(u8), v: SCRIPT_VER });
       }
     } catch (e) { W.__liveHook.errors++; }
   };

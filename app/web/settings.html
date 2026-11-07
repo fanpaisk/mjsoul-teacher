@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>雀魂教练 · 设置</title>
+<style>
+  :root{--bg:#14161b;--card:#1c1f26;--line:#2b303b;--fg:#e8e6e3;--dim:#9aa0ab;--acc:#e0a96d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.7 "Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:640px;margin:0 auto;padding:32px 20px 64px}
+  h1{font-size:19px;margin:0 0 18px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
+  label{display:block;margin:0 0 6px;color:var(--dim);font-size:13px}
+  .opt{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #23262e}
+  .opt:last-child{border-bottom:0}
+  .opt input{margin-top:5px}
+  .opt b{font-weight:600;display:block}
+  .opt span{color:var(--dim);font-size:12.5px}
+  input[type=number]{width:110px;background:#111318;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px}
+  button{background:var(--acc);color:#1a1208;border:0;border-radius:7px;padding:9px 16px;font-size:13px;cursor:pointer;font-weight:600}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:400}
+  .hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+  .toast{position:fixed;right:20px;bottom:20px;background:#25603c;color:#d9f7e4;padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .25s}
+  .toast.show{opacity:1}
+  code{background:#111318;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>设置</h1>
+
+  <div class="card">
+    <label>提醒时机</label>
+    <div class="opt"><input type="radio" name="mode" value="review" id="m1">
+      <div><b>复盘模式（推荐，公共版默认）</b><span>你切完牌之后才出现该手提醒与对比。先做决策，再看教练怎么评价。</span></div></div>
+    <div class="opt"><input type="radio" name="mode" value="realtime" id="m2">
+      <div><b>实时模式</b><span>摸牌瞬间就给建议。更接近"代打"，请自行斟酌使用场景。</span></div></div>
+  </div>
+
+  <div class="card">
+    <label>牌面显示</label>
+    <div class="opt"><input type="checkbox" id="dark">
+      <div><b>默认黑牌</b><span>牌面默认全黑，按住某张牌临时查看。直播/录屏时防止手牌泄露。</span></div></div>
+  </div>
+
+  <div class="card">
+    <label>服务端口</label>
+    <input type="number" id="port" min="1024" max="65535">
+    <div class="hint">改端口后需要同步改页面脚本里的地址（默认 18766，一般不用动）。</div>
+  </div>
+
+  <div class="card">
+    <label>当前环境</label>
+    <div class="hint" id="env">读取中…</div>
+  </div>
+
+  <div class="card">
+    <label>维护</label>
+    <div class="opt" style="border-bottom:0">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="ghost" id="btnUpdate">检查更新</button>
+        <button class="ghost" id="btnDiag">导出诊断包</button>
+      </div>
+      <span id="opsResult" style="margin-top:6px;display:block"></span>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px">
+    <button id="save">保存</button>
+    <button class="ghost" id="back">返回设置向导</button>
+  </div>
+  <div class="hint">保存后需重启教练生效（托盘菜单 → 停止 / 启动）。</div>
+</div>
+<div class="toast" id="toast">已保存</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cfg = null;
+
+(async () => {
+  cfg = await (await fetch('/config', { cache: 'no-store' })).json();
+  const mode = cfg.mode || (cfg.review ? 'review' : 'realtime');
+  (mode === 'review' ? $('m1') : $('m2')).checked = true;
+  $('dark').checked = !!cfg.tileDark;
+  $('port').value = cfg.port || 18766;
+  const e = cfg.engine || {};
+  $('env').innerHTML = [
+    '版本 <code>v' + cfg.version + '</code>',
+    '运行时 ' + (e.pythonFound ? '就绪' : '缺失'),
+    '模型 ' + (e.modelLabel || '未找到'),
+    '模式 ' + (mode === 'review' ? '复盘' : '实时'),
+  ].join(' · ');
+})();
+
+$('save').onclick = async () => {
+  const body = {
+    mode: $('m1').checked ? 'review' : 'realtime',
+    tileDark: $('dark').checked,
+    port: parseInt($('port').value, 10) || 18766,
+  };
+  const r = await (await fetch('/api/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })).json();
+  if (r.ok) { $('toast').classList.add('show'); setTimeout(() => $('toast').classList.remove('show'), 1800); }
+  else alert('保存失败：' + (r.error || '未知错误'));
+};
+$('back').onclick = () => { location.href = '/setup'; };
+
+$('btnUpdate').onclick = async () => {
+  $('opsResult').textContent = '检查中…';
+  try {
+    const r = await (await fetch('/api/update', { cache: 'no-store' })).json();
+    if (!r.ok) { $('opsResult').textContent = '检查失败：' + (r.error || '未知错误'); return; }
+    $('opsResult').innerHTML = r.hasUpdate
+      ? '有新版本 <b>' + r.latest + '</b>（当前 ' + r.current + '）· <a href="' + r.url + '" target="_blank">打开下载页</a>'
+      : '已是最新版本（' + r.current + '）';
+  } catch (e) { $('opsResult').textContent = '检查失败：' + e.message; }
+};
+
+$('btnDiag').onclick = async () => {
+  $('opsResult').textContent = '打包中…';
+  try {
+    const r = await (await fetch('/api/diag/export', { method: 'POST' })).json();
+    $('opsResult').textContent = r.ok
+      ? '已导出：' + r.file + '（' + Math.round(r.bytes / 1024) + ' KB）'
+      : '导出失败：' + (r.error || '未知错误');
+  } catch (e) { $('opsResult').textContent = '导出失败：' + e.message; }
+};
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ secrets.local.json
 # ===== 内部交接文档（含本地路径/缺陷清单，只留本地副本，不入开源仓）=====
 AGENTS.md
 docs/
+v2.1/
 BACKUP.md
 
 # ===== 运行时产生的数据 =====
@@ -22,6 +23,15 @@ live/server.log
 live/games/
 live/crash_context.json
 
+# ===== v2.1 本地校准数据与审计日志（含本机屏幕读数/坐标，属个人环境信息）=====
+local/
+live/v2/*.jsonl
+live/v2/screen.json
+live/v2/windows.json
+live/v2/calibration_report.json
+live/v2/dbg.log
+live/v2/probe_err.log
+
 # ===== 模型权重（体积大，按 README 自行下载）=====
 *.pth
 
@@ -39,3 +49,6 @@ engine/reviewer/
 # ===== Python =====
 __pycache__/
 *.pyc
+
+dist/
+config.json

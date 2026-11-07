@@ -1,0 +1,18 @@
+{
+  "name": "majsoul-coach",
+  "productName": "雀魂教练",
+  "version": "1.25.1",
+  "private": true,
+  "description": "雀魂（Mahjong Soul）本地 AI 教练：Mortal S42 本地推理 + 游戏内悬浮面板",
+  "license": "SEE LICENSE IN LICENSE",
+  "main": "live/live_coach.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node live/live_coach.js",
+    "start:review": "node live/live_coach.js --review",
+    "check": "node --check live/live_coach.js && node --check live/coach_hook.user.js",
+    "test": "node live/live_coach.js --test-actions=live/test_call_op.jsonl"
+  }
+}
