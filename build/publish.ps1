@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   把本工作目录的"该发布的文件"同步到发布仓（C:\Users\sk\Desktop\mjsoul-teacher）。
   **默认只做 dry-run 报告**，不改任何东西；加 -Apply 才真复制。
@@ -15,7 +15,8 @@
 param(
   [string]$Repo = 'C:\Users\sk\Desktop\mjsoul-teacher',
   [switch]$Apply,
-  [switch]$Commit
+  [switch]$Commit,
+  [switch]$Prune
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,6 +105,27 @@ foreach ($p in $plan) {
   Copy-Item $p.Src $dst -Force
 }
 Write-Host "已复制 $($plan.Count) 个文件到发布仓。" -ForegroundColor Green
+
+# -Prune：本地已删除、但仓库里还留着的"受管文件"一并删掉。
+# 不写这一步就会出现"本地删了、仓库里还在"的漂移（第一次清理遗留文件时踩过）。
+if ($Prune) {
+  Push-Location $Repo
+  try {
+    $tracked = git -c core.quotepath=false ls-files
+    $removed = 0
+    foreach ($t in $tracked) {
+      $norm = $t -replace '\\', '/'
+      $managed = $norm.StartsWith('app/') -or $norm.StartsWith('build/') -or ($files -contains $norm)
+      if (-not $managed) { continue }
+      if (-not (Test-Path (Join-Path $root ($norm -replace '/', '\')))) {
+        git rm -q -- $t
+        Write-Host "  - $norm" -ForegroundColor DarkYellow
+        $removed++
+      }
+    }
+    Write-Host "  清理 $removed 个已删除文件" -ForegroundColor Yellow
+  } finally { Pop-Location }
+}
 
 if ($Commit) {
   Push-Location $Repo
