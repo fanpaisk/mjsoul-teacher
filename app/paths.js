@@ -9,6 +9,7 @@
  *   3. 解耦：功能代码只调 paths.pythonExe()，不关心它是怎么被找到的。
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
@@ -109,8 +110,25 @@ function hasVcRuntime() {
   return probe(dir) || probe(sys);
 }
 
+/** 用户数据目录（%APPDATA%\MahjongSoulCoach）：配置、用户壁纸都放这里 ——
+ *  装进安装目录的东西会在升级/覆盖安装时被清掉（实机踩过：上传的壁纸重启后就没了）。 */
+function userDataDir() {
+  const base = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(base, 'MahjongSoulCoach');
+}
+
+/** 用户自传壁纸目录（与安装目录分离，升级不丢） */
+function wallpaperDir() {
+  return path.join(userDataDir(), 'wallpaper');
+}
+
+/** 随包发布的默认壁纸目录（只读） */
+function assetsDir() {
+  return path.join(ROOT, 'live', 'assets');
+}
+
 module.exports = {
-  ROOT, botDir, webDir,
+  ROOT, botDir, webDir, userDataDir, wallpaperDir, assetsDir,
   pythonExe, model, userscript, dataDir, hasVcRuntime,
   exists,
   diagnostics(config) {

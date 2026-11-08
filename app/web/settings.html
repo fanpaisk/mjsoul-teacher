@@ -126,9 +126,12 @@ function fmtMB(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math
 async function loadWallpaper() {
   try {
     const r = await (await fetch('/api/wallpaper', { cache: 'no-store' })).json();
-    $('wpNow').textContent = r.current
-      ? '当前：' + r.current.name + '（' + fmtMB(r.current.bytes) + '）'
-      : '当前：无壁纸（面板为纯色背景，固定高度）';
+    const c = r.current;
+    $('wpNow').textContent = !c
+      ? '当前：无壁纸（面板纯色背景，固定高度 520px）'
+      : (c.source === 'user'
+        ? '当前：你上传的 ' + c.name + '（' + fmtMB(c.bytes) + '）'
+        : '当前：随包默认壁纸 ' + c.name + '（' + fmtMB(c.bytes) + '）');
   } catch (e) { $('wpNow').textContent = '读取失败：' + e.message; }
 }
 loadWallpaper();

@@ -1121,16 +1121,27 @@ if (TEST_ACTIONS) {
           return;
         }
         if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg' && !req.url.startsWith('/assets/emo/')) {
-          // 自动选取 live/assets 下最新的视频文件（mp4/webm），文件名随意，换视频即换背景
+          // 壁纸来源优先级：用户壁纸目录（%APPDATA%，升级不丢）→ 安装目录 live/assets（随包默认）
+          // 各目录里取 mtime 最新的那个媒体文件；文件名随意。
           try {
-            const dirA = path.join(__dirname, 'assets');
-            const vids = fs.readdirSync(dirA)
-              .filter(f => /.(mp4|webm|png|jpe?g|webp|gif)$/i.test(f))
-              .map(f => ({ f, t: fs.statSync(path.join(dirA, f)).mtimeMs }))
-              .sort((a, b) => b.t - a.t);
-            if (!vids.length) { res.statusCode = 404; res.end(''); return; }
-            const data = fs.readFileSync(path.join(dirA, vids[0].f));
-            const ext = vids[0].f.toLowerCase().split('.').pop();
+            const MEDIA = /\.(mp4|webm|png|jpe?g|webp|gif)$/i;
+            const newestIn = (dir) => {
+              let best = null;
+              let names = [];
+              try { names = fs.readdirSync(dir); } catch (e) { return null; }
+              for (const f of names) {
+                if (!MEDIA.test(f)) continue;
+                const full = path.join(dir, f);
+                let st; try { st = fs.statSync(full); } catch (e) { continue; }
+                if (!best || st.mtimeMs > best.t) best = { f, t: st.mtimeMs, full };
+              }
+              return best;
+            };
+            // 用户壁纸**整类优先**（不看 mtime）：否则重装后随包默认的 mtime 更新，会盖掉用户自己传的
+            const best = newestIn(APP.paths.wallpaperDir()) || newestIn(APP.paths.assetsDir());
+            if (!best) { res.statusCode = 404; res.end(''); return; }
+            const data = fs.readFileSync(best.full);
+            const ext = best.f.toLowerCase().split('.').pop();
             res.setHeader('Content-Type', ({ mp4: 'video/mp4', webm: 'video/webm', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' })[ext] || 'application/octet-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.end(data);
@@ -1216,20 +1227,26 @@ if (TEST_ACTIONS) {
           res.end(JSON.stringify(r));
           return;
         }
-        // ---------- 壁纸（用户自传，存到 live/assets） ----------
-        // 面板固定请求 /assets/bg.mp4，而 /assets 路由返回的是"目录里最新的媒体文件"，
-        // 所以上传任意文件名都能生效；面板按该媒体的高宽比自适应高度。
+        // ---------- 壁纸（用户自传 → %APPDATA%\MahjongSoulCoach\wallpaper\） ----------
+        // **不能存在安装目录**：覆盖安装/换目录会把上传的壁纸一起清掉（实机踩过：重启后壁纸没了）。
+        // 面板固定请求 /assets/bg.mp4；该路由按 "用户壁纸目录 → 安装目录 live/assets(默认)" 取最新的媒体。
         if (req.url === '/api/wallpaper' && req.method === 'GET') {
-          const dirA = path.join(__dirname, 'assets');
-          let list = [];
-          try {
-            list = fs.readdirSync(dirA)
-              .filter(f => /\.(mp4|webm|png|jpe?g|webp|gif)$/i.test(f))
-              .map(f => { const st = fs.statSync(path.join(dirA, f)); return { name: f, bytes: st.size, at: st.mtimeMs }; })
-              .sort((a, b) => b.at - a.at);
-          } catch (e) {}
+          const MEDIA = /\.(mp4|webm|png|jpe?g|webp|gif)$/i;
+          const scan = (dir, source) => {
+            let out2 = [];
+            try {
+              out2 = fs.readdirSync(dir).filter(f => MEDIA.test(f)).map(f => {
+                const st = fs.statSync(path.join(dir, f));
+                return { name: f, bytes: st.size, at: st.mtimeMs, source };
+              });
+            } catch (e) {}
+            return out2;
+          };
+          const user = scan(APP.paths.wallpaperDir(), 'user');
+          const builtin = scan(APP.paths.assetsDir(), 'builtin');
+          const all = user.concat(builtin).sort((a, b) => (b.source === 'user') - (a.source === 'user') || b.at - a.at);
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify({ ok: true, current: list[0] || null, files: list }));
+          res.end(JSON.stringify({ ok: true, current: all[0] || null, files: all }));
           return;
         }
         if (req.url === '/api/wallpaper' && req.method === 'POST') {
@@ -1249,17 +1266,18 @@ if (TEST_ACTIONS) {
             res.end(JSON.stringify({ ok: false, error: '文件为空或太小' }));
             return;
           }
-          const dirA = path.join(__dirname, 'assets');
+          const dirA = APP.paths.wallpaperDir();
           try {
             fs.mkdirSync(dirA, { recursive: true });
+            // 只清用户壁纸目录里的旧文件（安装目录里的默认壁纸不动）
             for (const f of fs.readdirSync(dirA)) {
-              if (/^wallpaper\./.test(f)) { try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {} }
+              try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {}
             }
-            const name = 'wallpaper' + ext;
+            const name = 'user' + ext;
             fs.writeFileSync(path.join(dirA, name), rawBody);
             out('壁纸已更新：' + name + '（' + Math.round(rawBody.length / 1048576 * 10) / 10 + ' MB），刷新游戏页生效');
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify({ ok: true, name, bytes: rawBody.length }));
+            res.end(JSON.stringify({ ok: true, name, bytes: rawBody.length, dir: dirA }));
           } catch (e) {
             res.statusCode = 500;
             res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -1267,10 +1285,11 @@ if (TEST_ACTIONS) {
           return;
         }
         if (req.url === '/api/wallpaper' && req.method === 'DELETE') {
-          const dirA = path.join(__dirname, 'assets');
+          // 只删"用户上传的"，恢复成随包的默认壁纸
+          const dirA = APP.paths.wallpaperDir();
           try {
             for (const f of fs.readdirSync(dirA)) {
-              if (/^wallpaper\./.test(f)) { try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {} }
+              try { fs.unlinkSync(path.join(dirA, f)); } catch (e) {}
             }
           } catch (e) {}
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
