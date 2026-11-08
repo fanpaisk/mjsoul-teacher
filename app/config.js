@@ -16,8 +16,18 @@ const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
 
-const DEFAULTS = {
-  port: 18766,
+/**
+ * 公共版边界（DECISIONS D5 / D44）：只允许**复盘模式**。
+ *
+ * 实时模式（摸牌瞬间就给建议）太接近代打，而这个工具的定位是"事后复盘、提升牌效"。
+ * 功能代码保留（以后要放开只改这一个开关再打包），但**用户没有办法打开它**：
+ *   · 设置页只有一行只读的"复盘模式（固定）"
+ *   · POST /api/settings 传 realtime 会被拒（400）
+ *   · 命令行 --realtime 被忽略，config.json 里的 mode 也被强制覆盖
+ */
+const REVIEW_ONLY = true;
+
+const DEFAULTS = {  port: 18766,
   // null = 不表态，跟随旧行为（live/coach_settings.json 的 reviewMode，缺省=实时）。
   // 公共版安装器会显式写入 'review'；这里给 null 是为了**不悄悄改变老用户的行为**。
   mode: null,              // 'review' = 切完才提醒 | 'realtime' = 摸牌即提醒
@@ -72,6 +82,8 @@ function load() {
     cfg.mode = legacy.reviewMode ? 'review' : 'realtime';
     modeDerived = true;
   }
+  // 公共版：无论文件里写了什么，一律复盘（用户改不出来）
+  if (REVIEW_ONLY) { cfg.mode = 'review'; modeDerived = false; }
 
   // 环境变量（打包/调试用）优先于文件
   if (process.env.COACH_PORT) cfg.port = parseInt(process.env.COACH_PORT, 10) || cfg.port;
@@ -85,8 +97,12 @@ function load() {
 /** 命令行覆盖（入口调用一次，保证 --review/--dark-tiles 仍然有效） */
 function applyCli(cfg, argv) {
   const args = argv || [];
-  if (args.includes('--review')) cfg.mode = 'review';
-  if (args.includes('--realtime')) cfg.mode = 'realtime';
+  if (REVIEW_ONLY) {
+    cfg.mode = 'review';          // 忽略 --realtime
+  } else {
+    if (args.includes('--review')) cfg.mode = 'review';
+    if (args.includes('--realtime')) cfg.mode = 'realtime';
+  }
   if (args.includes('--dark-tiles')) cfg.tileDark = true;
   const p = args.find(a => a.startsWith('--port='));
   if (p) cfg.port = parseInt(p.split('=')[1], 10) || cfg.port;
@@ -129,8 +145,12 @@ function sanitize(patch, rootDir) {
   const bad = [];
 
   if ('mode' in patch) {
-    if (patch.mode === null || patch.mode === 'review' || patch.mode === 'realtime') out.mode = patch.mode;
-    else bad.push('mode');
+    if (REVIEW_ONLY) {
+      if (patch.mode === null || patch.mode === 'review') out.mode = patch.mode;
+      else bad.push('mode（公共版只支持复盘模式）');
+    } else if (patch.mode === null || patch.mode === 'review' || patch.mode === 'realtime') {
+      out.mode = patch.mode;
+    } else bad.push('mode');
   }
   if ('tileDark' in patch) {
     if (typeof patch.tileDark === 'boolean') out.tileDark = patch.tileDark; else bad.push('tileDark');
@@ -168,4 +188,4 @@ function sanitize(patch, rootDir) {
   return { ok: true, value: out };
 }
 
-module.exports = { DEFAULTS, load, save, applyCli, candidateFiles, sanitize };
+module.exports = { DEFAULTS, REVIEW_ONLY, load, save, applyCli, candidateFiles, sanitize };

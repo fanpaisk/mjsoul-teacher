@@ -377,6 +377,8 @@ if (CFG && CFG.mode) S.reviewMode = CFG.mode === 'review';
 if (CFG && CFG.tileDark) S.tileDark = true;
 if (ARG_REVIEW) S.reviewMode = true;
 if (ARG_DARK) S.tileDark = true;
+// 公共版边界（D5/D44）：即使 config.json 写 realtime、或命令行带 --realtime，也强制复盘
+if (APP && APP.config.REVIEW_ONLY) S.reviewMode = true;
 
 
 // ---------- mjai 事件输出（bot.py 增量消费） ----------

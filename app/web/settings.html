@@ -32,10 +32,14 @@
 
   <div class="card">
     <label>提醒时机</label>
-    <div class="opt"><input type="radio" name="mode" value="review" id="m1">
-      <div><b>复盘模式（推荐，公共版默认）</b><span>你切完牌之后才出现该手提醒与对比。先做决策，再看教练怎么评价。</span></div></div>
-    <div class="opt"><input type="radio" name="mode" value="realtime" id="m2">
-      <div><b>实时模式</b><span>摸牌瞬间就给建议。更接近"代打"，请自行斟酌使用场景。</span></div></div>
+    <div class="opt" style="border-bottom:0">
+      <div>
+        <b>复盘模式（当前版本固定）</b>
+        <span>你切完牌之后才出现该手提醒与对比：先做决策，再看教练怎么评价。</span>
+      </div>
+      <span class="badge" style="border-color:#5c4a1c;color:#fbbf24">🔒 固定</span>
+    </div>
+    <div class="hint">实时模式（摸牌瞬间就给建议）暂未开放。这个工具的定位是「事后复盘、提升牌效」，不是代打。</div>
   </div>
 
   <div class="card">
@@ -94,8 +98,7 @@ let cfg = null;
 
 (async () => {
   cfg = await (await fetch('/config', { cache: 'no-store' })).json();
-  const mode = cfg.mode || (cfg.review ? 'review' : 'realtime');
-  (mode === 'review' ? $('m1') : $('m2')).checked = true;
+  const mode = 'review';   // 公共版锁定复盘模式，不再读用户选择
   $('dark').checked = !!cfg.tileDark;
   $('port').value = cfg.port || 18766;
   const e = cfg.engine || {};
@@ -103,13 +106,13 @@ let cfg = null;
     '版本 <code>v' + cfg.version + '</code>',
     '运行时 ' + (e.pythonFound ? '就绪' : '缺失'),
     '模型 ' + (e.modelLabel || '未找到'),
-    '模式 ' + (mode === 'review' ? '复盘' : '实时'),
+    '模式 复盘（固定）',
   ].join(' · ');
 })();
 
 $('save').onclick = async () => {
   const body = {
-    mode: $('m1').checked ? 'review' : 'realtime',
+    mode: 'review',          // 写死：服务端也会拒绝 realtime（公共版边界，见 DECISIONS D5）
     tileDark: $('dark').checked,
     port: parseInt($('port').value, 10) || 18766,
   };
