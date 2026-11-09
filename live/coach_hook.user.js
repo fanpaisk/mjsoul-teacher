@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.27.2
+// @version      1.27.3
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -218,45 +218,98 @@
     });
   }
 
+  function loadImageWallpaper(t0) {
+    GM_xmlhttpRequest({
+      method: 'GET', url: 'http://127.0.0.1:18766/assets/image', timeout: 20000, responseType: 'blob',
+      onload: (r) => {
+        const ms = Date.now() - t0;
+        try {
+          if (r.status !== 200 || !r.response) { bgFail('HTTP ' + r.status + '(image)', ms); return; }
+          if (bgEl) { try { bgEl.remove(); } catch (e) {} }
+          bgEl = document.createElement('img');
+          bgEl.className = 'cjc-bg';
+          bgEl.onerror = () => bgFail('image error', Date.now() - t0);
+          bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
+          bgEl.src = URL.createObjectURL(r.response);
+          panel.insertBefore(bgEl, bgShade);
+          bgTries = 0;
+          setBgChip('', false);
+          reportBg({ ok: true, kind: 'image', ms, bytes: r.response.size || 0 });
+        } catch (e) { bgFail('exception: ' + e.message, ms); }
+      },
+      onerror: () => bgFail('network(image)', Date.now() - t0),
+      ontimeout: () => bgFail('timeout(image)', Date.now() - t0),
+    });
+  }
+
+  let gestureArmed = false;
+  function tryPlayVideo() {
+    if (!bgEl || bgEl.tagName !== 'VIDEO') return;
+    let p;
+    try { p = bgEl.play(); } catch (e) { reportBg({ ok: false, reason: 'play-sync:' + e.name, kind: 'video' }); armGesture(); return; }
+    if (p && p.catch) p.catch((e) => {
+      reportBg({
+        ok: false, reason: 'play:' + ((e && e.name) || e), kind: 'video',
+        state: { rs: bgEl.readyState, w: bgEl.videoWidth, h: bgEl.videoHeight, paused: bgEl.paused },
+      });
+      armGesture();
+    });
+  }
+  function armGesture() {
+    if (gestureArmed) return;
+    gestureArmed = true;
+    const kick = () => {
+      gestureArmed = false;
+      try { bgEl.muted = true; } catch (e) {}
+      tryPlayVideo();
+    };
+    document.addEventListener('pointerdown', kick, { once: true, capture: true });
+    document.addEventListener('keydown', kick, { once: true, capture: true });
+    setBgChip('点一下让壁纸动起来', true);
+  }
+
   function applyBgMedia() {
     if (typeof GM_xmlhttpRequest !== 'function') { setBgChip('壁纸不可用（无 GM 权限）', false); return; }
     const t0 = Date.now();
     GM_xmlhttpRequest({
-      method: 'GET', url: 'http://127.0.0.1:18766/assets/bg.mp4', timeout: 30000, responseType: 'blob',
+      method: 'GET', url: 'http://127.0.0.1:18766/assets/video', timeout: 30000, responseType: 'blob',
       onload: (r) => {
         const ms = Date.now() - t0;
         try {
-          if (r.status !== 200 || !r.response) { bgFail('HTTP ' + r.status, ms); return; }
-          const isVideo = (r.response.type || '').startsWith('video');
-          if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
-          bgEl = document.createElement(isVideo ? 'video' : 'img');
-          bgEl.className = 'cjc-bg';
-          if (isVideo) {
-            bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; bgEl.preload = 'auto';
-            // 先透明：只有真的开始播放（playing 事件）才盖住静帧，
-            // 避免"加载成功但一帧都没画"时把静帧挡成空白
-            bgEl.style.opacity = '0';
-            bgEl.style.transition = 'opacity .35s';
-            bgPoster();
+          // 没有视频壁纸（404 / 拿到的是图片）→ 走图片路径（用户传的静图或随包静图）
+          if (r.status !== 200 || !r.response || !(r.response.type || '').startsWith('video')) {
+            loadImageWallpaper(t0);
+            return;
           }
+          if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
+          bgEl = document.createElement('video');
+          bgEl.className = 'cjc-bg';
+          bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; bgEl.preload = 'auto';
+          // 先透明：只有真的开始播放（playing）才盖住静帧，避免"拿到视频但一帧没画"把静帧挡成空白
+          bgEl.style.opacity = '0';
+          bgEl.style.transition = 'opacity .35s';
           bgEl.onerror = () => bgFail('media error', Date.now() - t0);
+          bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
+          bgEl.addEventListener('canplay', tryPlayVideo);
+          bgEl.addEventListener('playing', () => {
+            bgEl.style.opacity = '1';
+            gestureArmed = false;
+            setBgChip('', false);
+            reportBg({ ok: true, kind: 'video', playing: true, ms: Date.now() - t0, w: bgEl.videoWidth, h: bgEl.videoHeight });
+          });
           bgEl.src = URL.createObjectURL(r.response);
           panel.insertBefore(bgEl, bgShade);
-          if (isVideo) {
-            const tryPlay = () => bgEl.play().catch(() => {
-              const kick = () => { bgEl.muted = true; bgEl.play().catch(() => {}); };
-              document.addEventListener('pointerdown', kick, { once: true });
-              document.addEventListener('keydown', kick, { once: true });
-            });
-            tryPlay();
-            bgEl.addEventListener('playing', () => { bgEl.style.opacity = '1'; });
-            bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
-          } else {
-            bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
-          }
+          bgPoster();
+          bgEl.load();
+          tryPlayVideo();
+          // 3 秒后还没动：再试一次并给出可点的提示（用户点一下 = 真实手势，最稳）
+          setTimeout(() => {
+            if (!bgEl || bgEl.tagName !== 'VIDEO') return;
+            if (!bgEl.paused) return;
+            tryPlayVideo();
+            if (bgEl.paused) setBgChip('点一下让壁纸动起来', true);
+          }, 3000);
           bgTries = 0;
-          setBgChip('', false);
-          reportBg({ ok: true, ms, type: r.response.type || '?', bytes: r.response.size || 0 });
         } catch (e) { bgFail('exception: ' + e.message, ms); }
       },
       onerror: () => bgFail('network', Date.now() - t0),
@@ -276,6 +329,12 @@
   bgChip.addEventListener('click', (ev) => {
     ev.stopPropagation();
     if (bgChip.style.cursor !== 'pointer') return;
+    // 已经有视频元素但没在播 → 这次点击就是"真实手势"，直接播
+    if (bgEl && bgEl.tagName === 'VIDEO') {
+      setBgChip('', false);
+      tryPlayVideo();
+      return;
+    }
     bgTries = 0;
     setBgChip('壁纸加载中…', false);
     applyBgMedia();
