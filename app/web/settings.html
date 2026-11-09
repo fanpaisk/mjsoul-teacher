@@ -77,6 +77,7 @@
     <label>维护</label>
     <div class="opt" style="border-bottom:0">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="ghost" id="btnScript2">更新页面脚本</button>
         <button class="ghost" id="btnUpdate">检查更新</button>
         <button class="ghost" id="btnDiag">导出诊断包</button>
       </div>
@@ -165,6 +166,8 @@ $('wpReset').onclick = async () => {
   $('wpMsg').textContent = r.ok ? '已恢复默认，刷新游戏页生效' : '失败';
   loadWallpaper();
 };
+
+$('btnScript2').onclick = () => { window.open('/coach.user.js', '_blank'); };
 
 $('btnUpdate').onclick = async () => {
   $('opsResult').textContent = '检查中…';

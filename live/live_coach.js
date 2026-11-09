@@ -752,7 +752,10 @@ function handleAction(name, d) {
     if (s === S.seat) {
       const i = S.hands[s].indexOf(d.tile);
       if (i >= 0) S.hands[s].splice(i, 1);
-      if (S.lastAdvice) {
+      // 复盘模式：**不在这里打印"你切了"**。此时 lastAdvice 还是上一手的建议，
+      // 直接比会整体错位一位（实机现象：每手的"你切了"都挂到上一手）。
+      // 正确顺序是：本手复盘建议到达后，紧跟一行"你切了 …"，与这条建议同源。
+      if (S.lastAdvice && !S.reviewMode) {
         const c = S.lastAdvice.find(x => x.tile === pai);
         out(`  你切了 ${disp(pai)}` + (c ? `（Mortal 第 ${c.rank} 名 ${c.value}）` : '（不在推荐之列）'));
       }
@@ -781,7 +784,9 @@ function handleAction(name, d) {
     }
     pushEv({ type: 'dahai', actor: s, pai, tsumogiri: !!d.moqie });
     if (s === S.seat && S.reviewMode && d.tile) {
-      requestAdvice(d.tile, 'review', S.mjaiBuffer.length - beforePush);
+      // 带上"实际切了哪张"：onMortalVerdict 里会在建议之后立刻打印对比行，
+      // 两者用的是同一份建议列表，不会错位。
+      requestAdvice(d.tile, 'review', S.mjaiBuffer.length - beforePush, d.tile);
     }
     // 他家切牌后我有吃/碰/杠/荣和机会 → 请求操作评分（含跳过）
     if (s !== S.seat && d.tile) {
@@ -1122,6 +1127,39 @@ if (TEST_ACTIONS) {
           res.end(JSON.stringify({ items, next: PANEL.idx }));
           return;
         }
+        // 兼容别名：1.27.3 的脚本会请求 /assets/video 与 /assets/image。
+        // 脚本由 Tampermonkey 异步更新，可能与服务端不同步 —— 留着这两条路由，
+        // 避免"脚本没更新 → 壁纸整个消失"（实机踩过）。
+        if (req.url === '/assets/video' || req.url === '/assets/image') {
+          const wantVideo = req.url === '/assets/video';
+          const RE = wantVideo ? /\.(mp4|webm)$/i : /\.(png|jpe?g|webp|gif)$/i;
+          const newest = (dir) => {
+            let best = null, names = [];
+            try { names = fs.readdirSync(dir); } catch (e) { return null; }
+            for (const f of names) {
+              if (!RE.test(f)) continue;
+              const full = path.join(dir, f);
+              let st; try { st = fs.statSync(full); } catch (e) { continue; }
+              if (!best || st.mtimeMs > best.t) best = { f, t: st.mtimeMs, full };
+            }
+            return best;
+          };
+          const pick = newest(APP.paths.wallpaperDir()) || newest(APP.paths.assetsDir());
+          if (!pick) { res.statusCode = 404; res.end(''); return; }
+          try {
+            const data = fs.readFileSync(pick.full);
+            const ext = pick.f.toLowerCase().split('.').pop();
+            res.setHeader('Content-Type', ({
+              mp4: 'video/mp4', webm: 'video/webm', png: 'image/png',
+              jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+            })[ext] || 'application/octet-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            STATS.bgHits++;
+            res.end(data);
+          } catch (e) { res.statusCode = 404; res.end(''); }
+          return;
+        }
+
         if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg' && !req.url.startsWith('/assets/emo/')) {
           // 壁纸来源优先级：用户壁纸目录（%APPDATA%，升级不丢）→ 安装目录 live/assets（随包默认）
           // 各目录里取 mtime 最新的那个媒体文件；文件名随意。
