@@ -110,6 +110,24 @@ if ($Wallpaper) {
     New-Item -ItemType Directory -Force -Path (Join-Path $out 'live/assets') | Out-Null
     Copy-Item $Wallpaper (Join-Path $out 'live/assets/bg.mp4') -Force
     Write-Host ("      已带壁纸：{0}（{1:N1} MB）" -f (Split-Path $Wallpaper -Leaf), ((Get-Item $Wallpaper).Length / 1MB))
+    # 视频壁纸同时生成一张静帧：真实页面里视频存在"下载成功但画不出来"的情况，
+    # 面板用它兜底（详见 live/coach_hook.user.js 的 bgPoster）
+    $ext = [IO.Path]::GetExtension($Wallpaper).ToLower()
+    if ($ext -eq '.mp4' -or $ext -eq '.webm') {
+      $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+      if (-not $ff) {
+        $ff = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+          Select-Object -First 1 -ExpandProperty FullName
+      }
+      if ($ff) {
+        & $ff -y -v error -ss 1 -i $Wallpaper -frames:v 1 -q:v 3 (Join-Path $out 'live/assets/poster.jpg')
+        if (Test-Path (Join-Path $out 'live/assets/poster.jpg')) {
+          Write-Host ("      已生成静帧 poster.jpg（{0:N0} KB）" -f ((Get-Item (Join-Path $out 'live/assets/poster.jpg')).Length / 1KB))
+        }
+      } else {
+        Write-Warning '      没找到 ffmpeg，视频壁纸将没有静帧兜底'
+      }
+    }
   } else { Write-Warning "壁纸文件不存在：$Wallpaper" }
 }
 Write-Host "[5/5] 统计" -ForegroundColor Cyan

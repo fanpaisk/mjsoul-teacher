@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.27.1
+// @version      1.27.2
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -195,6 +195,29 @@
       setBgChip('壁纸未加载 · 点此重试', true);
     }
   }
+  let posterEl = null;
+  // 视频壁纸在真实页面里出现过"下载成功但画不出来"（图片正常）。所以先铺静帧，视频能播再盖上来。
+  function bgPoster() {
+    if (typeof GM_xmlhttpRequest !== 'function') return;
+    GM_xmlhttpRequest({
+      method: 'GET', url: 'http://127.0.0.1:18766/assets/poster', timeout: 15000, responseType: 'blob',
+      onload: (r) => {
+        try {
+          if (r.status !== 200 || !r.response) return;
+          if (posterEl) { try { posterEl.remove(); } catch (e) {} }
+          posterEl = document.createElement('img');
+          posterEl.className = 'cjc-bg';
+          posterEl.addEventListener('load', () => {
+            if (!skinRatio) { skinRatio = (posterEl.naturalHeight / posterEl.naturalWidth) || 0; applyPanelSize(); }
+          });
+          posterEl.src = URL.createObjectURL(r.response);
+          panel.insertBefore(posterEl, bgShade);
+        } catch (e) {}
+      },
+      onerror: () => {},
+    });
+  }
+
   function applyBgMedia() {
     if (typeof GM_xmlhttpRequest !== 'function') { setBgChip('壁纸不可用（无 GM 权限）', false); return; }
     const t0 = Date.now();
@@ -208,7 +231,14 @@
           if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
           bgEl = document.createElement(isVideo ? 'video' : 'img');
           bgEl.className = 'cjc-bg';
-          if (isVideo) { bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; }
+          if (isVideo) {
+            bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; bgEl.preload = 'auto';
+            // 先透明：只有真的开始播放（playing 事件）才盖住静帧，
+            // 避免"加载成功但一帧都没画"时把静帧挡成空白
+            bgEl.style.opacity = '0';
+            bgEl.style.transition = 'opacity .35s';
+            bgPoster();
+          }
           bgEl.onerror = () => bgFail('media error', Date.now() - t0);
           bgEl.src = URL.createObjectURL(r.response);
           panel.insertBefore(bgEl, bgShade);
@@ -219,6 +249,7 @@
               document.addEventListener('keydown', kick, { once: true });
             });
             tryPlay();
+            bgEl.addEventListener('playing', () => { bgEl.style.opacity = '1'; });
             bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
           } else {
             bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
