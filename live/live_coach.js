@@ -269,7 +269,7 @@ function T(t) { return !t ? '?' : HON2[t] || (t[0] === '0' ? '5' + t[1] + 'r' : 
 // 悬浮面板数据环（最近 300 条输出，/panel 接口按序号增量拉取）
 const PANEL = { idx: 0, buf: [] };
 // 运行统计：设置向导判断"页面到底接没接上"，以及诊断包用
-const STATS = { frames: 0, bigFrames: 0, lastFrameAt: null, denied: 0, dropped: 0, rateWin: 0, rateN: 0, scriptVersion: null, verWarned: false };
+const STATS = { frames: 0, bigFrames: 0, lastFrameAt: null, denied: 0, dropped: 0, rateWin: 0, rateN: 0, scriptVersion: null, verWarned: false, bgHits: 0, bgLast: null };
 function out(line) {
   fs.appendFileSync(OUT_FILE, line + '\n');
   console.log(line);
@@ -1141,6 +1141,7 @@ if (TEST_ACTIONS) {
             };
             // 用户壁纸**整类优先**（不看 mtime）：否则重装后随包默认的 mtime 更新，会盖掉用户自己传的
             const best = newestIn(APP.paths.wallpaperDir()) || newestIn(APP.paths.assetsDir());
+            STATS.bgHits++;
             if (!best) { res.statusCode = 404; res.end(''); return; }
             const data = fs.readFileSync(best.full);
             const ext = best.f.toLowerCase().split('.').pop();
@@ -1337,6 +1338,22 @@ if (TEST_ACTIONS) {
           return;
         }
 
+        // ---------- 壁纸/前端诊断上报（面板侧加载失败时用，不涉及敏感数据） ----------
+        if (req.url === '/diag/bg' && req.method === 'POST') {
+          try {
+            const j = JSON.parse(body || '{}');
+            STATS.bgLast = {
+              at: Date.now(), ok: !!j.ok, ms: j.ms || null, reason: j.reason || null,
+              type: j.type || null, bytes: j.bytes || null, tries: j.tries === undefined ? null : j.tries,
+              script: j.v || null,
+            };
+            obs(`壁纸${j.ok ? 'OK' : '失败'}${j.ms ? ' ' + j.ms + 'ms' : ''}${j.reason ? ' ' + j.reason : ''}${j.bytes ? ' ' + j.bytes + 'B' : ''}`);
+          } catch (e) {}
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end('{"ok":true}');
+          return;
+        }
+
         if (req.url === '/config') {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           const diag = APP ? APP.paths.diagnostics(CFG) : null;
@@ -1350,6 +1367,8 @@ if (TEST_ACTIONS) {
             lastFrameAt: STATS.lastFrameAt,
             denied: STATS.denied,
             dropped: STATS.dropped,
+            bgHits: STATS.bgHits,
+            bgLast: STATS.bgLast,
             scriptVersion: STATS.scriptVersion || null,
             engine: diag ? {
               python: diag.python, pythonFound: diag.pythonFound,

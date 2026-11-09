@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.27.0
+// @version      1.27.1
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -159,22 +159,57 @@
   const panel = document.createElement('div');
   panel.id = 'cjc-panel';
   panel.style.cssText = 'position:fixed;top:12px;right:12px;width:450px;z-index:2147483646;font-family:sans-serif;background:linear-gradient(168deg,rgba(44,26,33,.94),rgba(22,12,18,.93));border:1px solid rgba(166,30,42,.45);border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.5),0 0 14px rgba(166,30,42,.2);overflow:hidden;';
-  // 背景视频：GM 通道取本地视频 blob，视频加载后按 16:9 自适应面板高度
+  // 背景视频：GM 通道取本地媒体 blob，加载后按素材高宽比自适应面板高度。
+  // v1.27.1：以前是"只试一次、失败静默"，只要那一次失败（超时/页面 CSP/服务未起）
+  // 壁纸就永远不出现，用户只能看到空白且无从判断 —— 现在改成 重试 + 上报 + 可见重试按钮。
   let bgEl = null;
+  let bgTries = 0;
+  let bgChip = null;          // 失败提示（放进标题栏）
   const bgShade = document.createElement('div');
   bgShade.className = 'cjc-bgshade';
   panel.appendChild(bgShade);
+
+  function setBgChip(msg, clickable) {
+    if (!bgChip) return;
+    bgChip.textContent = msg || '';
+    bgChip.style.display = msg ? 'inline-block' : 'none';
+    bgChip.style.cursor = clickable ? 'pointer' : 'default';
+  }
+  function reportBg(info) {
+    try {
+      if (typeof GM_xmlhttpRequest !== 'function') return;
+      GM_xmlhttpRequest({
+        method: 'POST', url: 'http://127.0.0.1:18766/diag/bg', timeout: 5000,
+        headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify(Object.assign({ v: SCRIPT_VER }, info)),
+      });
+    } catch (e) {}
+  }
+  function bgFail(reason, ms) {
+    reportBg({ ok: false, reason: String(reason), ms, tries: bgTries });
+    if (bgTries < 2) {
+      bgTries++;
+      setBgChip('壁纸加载中…', false);
+      setTimeout(applyBgMedia, bgTries === 1 ? 5000 : 15000);
+    } else {
+      setBgChip('壁纸未加载 · 点此重试', true);
+    }
+  }
   function applyBgMedia() {
-    if (typeof GM_xmlhttpRequest !== 'function') return;
-    GM_xmlhttpRequest({ method: 'GET', url: 'http://127.0.0.1:18766/assets/bg.mp4', timeout: 60000, responseType: 'blob',
+    if (typeof GM_xmlhttpRequest !== 'function') { setBgChip('壁纸不可用（无 GM 权限）', false); return; }
+    const t0 = Date.now();
+    GM_xmlhttpRequest({
+      method: 'GET', url: 'http://127.0.0.1:18766/assets/bg.mp4', timeout: 30000, responseType: 'blob',
       onload: (r) => {
+        const ms = Date.now() - t0;
         try {
-          if (r.status !== 200 || !r.response) return;
+          if (r.status !== 200 || !r.response) { bgFail('HTTP ' + r.status, ms); return; }
           const isVideo = (r.response.type || '').startsWith('video');
-          if (bgEl) bgEl.remove();
+          if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
           bgEl = document.createElement(isVideo ? 'video' : 'img');
           bgEl.className = 'cjc-bg';
           if (isVideo) { bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; }
+          bgEl.onerror = () => bgFail('media error', Date.now() - t0);
           bgEl.src = URL.createObjectURL(r.response);
           panel.insertBefore(bgEl, bgShade);
           if (isVideo) {
@@ -188,12 +223,15 @@
           } else {
             bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
           }
-        } catch (e) {}
+          bgTries = 0;
+          setBgChip('', false);
+          reportBg({ ok: true, ms, type: r.response.type || '?', bytes: r.response.size || 0 });
+        } catch (e) { bgFail('exception: ' + e.message, ms); }
       },
-      onerror: () => {},
+      onerror: () => bgFail('network', Date.now() - t0),
+      ontimeout: () => bgFail('timeout', Date.now() - t0),
     });
   }
-  applyBgMedia();
   const pHead = document.createElement('div');
   pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
@@ -201,13 +239,24 @@
   const pBtn = document.createElement('span');
   pBtn.textContent = '—';
   pBtn.style.cssText = 'cursor:pointer;color:#8fa3c8;padding:0 6px;font-size:14px;';
+  // 壁纸状态提示：正常情况下一直隐藏；加载中/失败时才出现（失败时可点击重试）
+  bgChip = document.createElement('span');
+  bgChip.style.cssText = 'display:none;font-size:11px;padding:0 6px;margin-left:auto;margin-right:6px;border-radius:4px;background:rgba(0,0,0,.35);color:#fbbf24;';
+  bgChip.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (bgChip.style.cursor !== 'pointer') return;
+    bgTries = 0;
+    setBgChip('壁纸加载中…', false);
+    applyBgMedia();
+  });
   pHead.appendChild(pTitle);
+  pHead.appendChild(bgChip);
   pHead.appendChild(pBtn);
   const pBody = document.createElement('div');
   pBody.style.cssText = 'position:relative;z-index:1;background:rgba(24,10,16,.38);color:#ffffff;text-shadow:0 1px 2px rgba(0,0,0,.8);font-size:12px;line-height:1.55;padding:6px 10px;border-radius:0 0 6px 6px;height:calc(100% - 29px);overflow-y:auto;white-space:pre-wrap;word-break:break-all;box-sizing:border-box;';
   panel.appendChild(pHead);
   panel.appendChild(pBody);
-  const mountP = () => { (document.body || document.documentElement).appendChild(panel); };
+  const mountP = () => { (document.body || document.documentElement).appendChild(panel); applyBgMedia(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountP, { once: true });
   else mountP();
   window.addEventListener('resize', () => { applyP(); saveP(); });
