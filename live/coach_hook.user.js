@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.27.3
+// @version      1.27.4
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -159,12 +159,11 @@
   const panel = document.createElement('div');
   panel.id = 'cjc-panel';
   panel.style.cssText = 'position:fixed;top:12px;right:12px;width:450px;z-index:2147483646;font-family:sans-serif;background:linear-gradient(168deg,rgba(44,26,33,.94),rgba(22,12,18,.93));border:1px solid rgba(166,30,42,.45);border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.5),0 0 14px rgba(166,30,42,.2);overflow:hidden;';
-  // 背景视频：GM 通道取本地媒体 blob，加载后按素材高宽比自适应面板高度。
-  // v1.27.1：以前是"只试一次、失败静默"，只要那一次失败（超时/页面 CSP/服务未起）
-  // 壁纸就永远不出现，用户只能看到空白且无从判断 —— 现在改成 重试 + 上报 + 可见重试按钮。
+  // 背景媒体：GM 通道取本地文件 blob，按素材高宽比自适应面板高度。
+  // 规则保持简单：安装目录 live/assets 里是随包默认视频；用户上传的文件在
+  // %APPDATA%\MahjongSoulCoach\wallpaper（整类优先于默认）。拿到什么类型就按什么类型显示。
   let bgEl = null;
-  let bgTries = 0;
-  let bgChip = null;          // 失败提示（放进标题栏）
+  let bgChip = null;
   const bgShade = document.createElement('div');
   bgShade.className = 'cjc-bgshade';
   panel.appendChild(bgShade);
@@ -185,137 +184,46 @@
       });
     } catch (e) {}
   }
-  function bgFail(reason, ms) {
-    reportBg({ ok: false, reason: String(reason), ms, tries: bgTries });
-    if (bgTries < 2) {
-      bgTries++;
-      setBgChip('壁纸加载中…', false);
-      setTimeout(applyBgMedia, bgTries === 1 ? 5000 : 15000);
-    } else {
-      setBgChip('壁纸未加载 · 点此重试', true);
-    }
-  }
-  let posterEl = null;
-  // 视频壁纸在真实页面里出现过"下载成功但画不出来"（图片正常）。所以先铺静帧，视频能播再盖上来。
-  function bgPoster() {
-    if (typeof GM_xmlhttpRequest !== 'function') return;
-    GM_xmlhttpRequest({
-      method: 'GET', url: 'http://127.0.0.1:18766/assets/poster', timeout: 15000, responseType: 'blob',
-      onload: (r) => {
-        try {
-          if (r.status !== 200 || !r.response) return;
-          if (posterEl) { try { posterEl.remove(); } catch (e) {} }
-          posterEl = document.createElement('img');
-          posterEl.className = 'cjc-bg';
-          posterEl.addEventListener('load', () => {
-            if (!skinRatio) { skinRatio = (posterEl.naturalHeight / posterEl.naturalWidth) || 0; applyPanelSize(); }
-          });
-          posterEl.src = URL.createObjectURL(r.response);
-          panel.insertBefore(posterEl, bgShade);
-        } catch (e) {}
-      },
-      onerror: () => {},
-    });
-  }
-
-  function loadImageWallpaper(t0) {
-    GM_xmlhttpRequest({
-      method: 'GET', url: 'http://127.0.0.1:18766/assets/image', timeout: 20000, responseType: 'blob',
-      onload: (r) => {
-        const ms = Date.now() - t0;
-        try {
-          if (r.status !== 200 || !r.response) { bgFail('HTTP ' + r.status + '(image)', ms); return; }
-          if (bgEl) { try { bgEl.remove(); } catch (e) {} }
-          bgEl = document.createElement('img');
-          bgEl.className = 'cjc-bg';
-          bgEl.onerror = () => bgFail('image error', Date.now() - t0);
-          bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
-          bgEl.src = URL.createObjectURL(r.response);
-          panel.insertBefore(bgEl, bgShade);
-          bgTries = 0;
-          setBgChip('', false);
-          reportBg({ ok: true, kind: 'image', ms, bytes: r.response.size || 0 });
-        } catch (e) { bgFail('exception: ' + e.message, ms); }
-      },
-      onerror: () => bgFail('network(image)', Date.now() - t0),
-      ontimeout: () => bgFail('timeout(image)', Date.now() - t0),
-    });
-  }
-
-  let gestureArmed = false;
-  function tryPlayVideo() {
-    if (!bgEl || bgEl.tagName !== 'VIDEO') return;
-    let p;
-    try { p = bgEl.play(); } catch (e) { reportBg({ ok: false, reason: 'play-sync:' + e.name, kind: 'video' }); armGesture(); return; }
-    if (p && p.catch) p.catch((e) => {
-      reportBg({
-        ok: false, reason: 'play:' + ((e && e.name) || e), kind: 'video',
-        state: { rs: bgEl.readyState, w: bgEl.videoWidth, h: bgEl.videoHeight, paused: bgEl.paused },
-      });
-      armGesture();
-    });
-  }
-  function armGesture() {
-    if (gestureArmed) return;
-    gestureArmed = true;
-    const kick = () => {
-      gestureArmed = false;
-      try { bgEl.muted = true; } catch (e) {}
-      tryPlayVideo();
-    };
-    document.addEventListener('pointerdown', kick, { once: true, capture: true });
-    document.addEventListener('keydown', kick, { once: true, capture: true });
-    setBgChip('点一下让壁纸动起来', true);
-  }
 
   function applyBgMedia() {
     if (typeof GM_xmlhttpRequest !== 'function') { setBgChip('壁纸不可用（无 GM 权限）', false); return; }
     const t0 = Date.now();
     GM_xmlhttpRequest({
-      method: 'GET', url: 'http://127.0.0.1:18766/assets/video', timeout: 30000, responseType: 'blob',
+      method: 'GET', url: 'http://127.0.0.1:18766/assets/bg.mp4', timeout: 30000, responseType: 'blob',
       onload: (r) => {
-        const ms = Date.now() - t0;
         try {
-          // 没有视频壁纸（404 / 拿到的是图片）→ 走图片路径（用户传的静图或随包静图）
-          if (r.status !== 200 || !r.response || !(r.response.type || '').startsWith('video')) {
-            loadImageWallpaper(t0);
+          if (r.status !== 200 || !r.response) {
+            setBgChip('壁纸加载失败（HTTP ' + r.status + '）', false);
+            reportBg({ ok: false, reason: 'HTTP ' + r.status });
             return;
           }
+          const isVideo = (r.response.type || '').startsWith('video');
           if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
-          bgEl = document.createElement('video');
+          bgEl = document.createElement(isVideo ? 'video' : 'img');
           bgEl.className = 'cjc-bg';
-          bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; bgEl.preload = 'auto';
-          // 先透明：只有真的开始播放（playing）才盖住静帧，避免"拿到视频但一帧没画"把静帧挡成空白
-          bgEl.style.opacity = '0';
-          bgEl.style.transition = 'opacity .35s';
-          bgEl.onerror = () => bgFail('media error', Date.now() - t0);
-          bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
-          bgEl.addEventListener('canplay', tryPlayVideo);
-          bgEl.addEventListener('playing', () => {
-            bgEl.style.opacity = '1';
-            gestureArmed = false;
-            setBgChip('', false);
-            reportBg({ ok: true, kind: 'video', playing: true, ms: Date.now() - t0, w: bgEl.videoWidth, h: bgEl.videoHeight });
-          });
+          if (isVideo) { bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; }
           bgEl.src = URL.createObjectURL(r.response);
           panel.insertBefore(bgEl, bgShade);
-          bgPoster();
-          bgEl.load();
-          tryPlayVideo();
-          // 3 秒后还没动：再试一次并给出可点的提示（用户点一下 = 真实手势，最稳）
-          setTimeout(() => {
-            if (!bgEl || bgEl.tagName !== 'VIDEO') return;
-            if (!bgEl.paused) return;
-            tryPlayVideo();
-            if (bgEl.paused) setBgChip('点一下让壁纸动起来', true);
-          }, 3000);
-          bgTries = 0;
-        } catch (e) { bgFail('exception: ' + e.message, ms); }
+          if (isVideo) {
+            bgEl.play().catch(() => {
+              // 自动播放被拦：等用户第一次点击/按键再播（原来的兜底）
+              const kick = () => { bgEl.muted = true; bgEl.play().catch(() => {}); };
+              document.addEventListener('pointerdown', kick, { once: true });
+              document.addEventListener('keydown', kick, { once: true });
+            });
+            bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
+          } else {
+            bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
+          }
+          setBgChip('', false);
+          reportBg({ ok: true, kind: isVideo ? 'video' : 'image', ms: Date.now() - t0, bytes: r.response.size || 0 });
+        } catch (e) { reportBg({ ok: false, reason: 'exception:' + e.message }); }
       },
-      onerror: () => bgFail('network', Date.now() - t0),
-      ontimeout: () => bgFail('timeout', Date.now() - t0),
+      onerror: () => { setBgChip('壁纸加载失败（网络）', false); reportBg({ ok: false, reason: 'network' }); },
+      ontimeout: () => { setBgChip('壁纸加载超时', false); reportBg({ ok: false, reason: 'timeout' }); },
     });
   }
+
   const pHead = document.createElement('div');
   pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
@@ -329,13 +237,6 @@
   bgChip.addEventListener('click', (ev) => {
     ev.stopPropagation();
     if (bgChip.style.cursor !== 'pointer') return;
-    // 已经有视频元素但没在播 → 这次点击就是"真实手势"，直接播
-    if (bgEl && bgEl.tagName === 'VIDEO') {
-      setBgChip('', false);
-      tryPlayVideo();
-      return;
-    }
-    bgTries = 0;
     setBgChip('壁纸加载中…', false);
     applyBgMedia();
   });

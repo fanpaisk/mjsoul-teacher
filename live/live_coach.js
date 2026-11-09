@@ -1122,60 +1122,6 @@ if (TEST_ACTIONS) {
           res.end(JSON.stringify({ items, next: PANEL.idx }));
           return;
         }
-        // 明确的媒体入口：视频 / 图片各自一个 URL，不再靠"目录里最新的文件"猜类型
-        // （之前 poster.jpg 比 bg.mp4 新，导致 /assets/bg.mp4 返回了一张 JPEG，面板就把壁纸当静图显示）
-        if (req.url === '/assets/video' || req.url === '/assets/image') {
-          const wantVideo = req.url === '/assets/video';
-          const RE = wantVideo ? /\.(mp4|webm)$/i : /\.(png|jpe?g|webp|gif)$/i;
-          const newest = (dir) => {
-            let best = null, names = [];
-            try { names = fs.readdirSync(dir); } catch (e) { return null; }
-            for (const f of names) {
-              if (!RE.test(f)) continue;
-              const full = path.join(dir, f);
-              let st; try { st = fs.statSync(full); } catch (e) { continue; }
-              if (!best || st.mtimeMs > best.t) best = { f, t: st.mtimeMs, full };
-            }
-            return best;
-          };
-          const pick = newest(APP.paths.wallpaperDir()) || newest(APP.paths.assetsDir());
-          if (!pick) { res.statusCode = 404; res.end(''); return; }
-          try {
-            const data = fs.readFileSync(pick.full);
-            const ext = pick.f.toLowerCase().split('.').pop();
-            res.setHeader('Content-Type', ({
-              mp4: 'video/mp4', webm: 'video/webm', png: 'image/png',
-              jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-            })[ext] || 'application/octet-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            STATS.bgHits++;
-            res.end(data);
-          } catch (e) { res.statusCode = 404; res.end(''); }
-          return;
-        }
-
-        // 静帧（poster）：视频壁纸在部分页面里"下载成功但画不出来"（实机：图片能显示、视频不行），
-        // 所以面板先铺这张静帧，视频能播再盖上去。见 /assets/bg.mp4 的处理。
-        if (req.url === '/assets/poster') {
-          const POSTER = /^poster\.(jpe?g|png|webp)$/i;
-          const pick = (dir) => {
-            try {
-              for (const f of fs.readdirSync(dir)) if (POSTER.test(f)) return path.join(dir, f);
-            } catch (e) {}
-            return null;
-          };
-          const file = pick(APP.paths.wallpaperDir()) || pick(APP.paths.assetsDir());
-          if (!file) { res.statusCode = 404; res.end(''); return; }
-          try {
-            const data = fs.readFileSync(file);
-            const ext = file.toLowerCase().split('.').pop();
-            res.setHeader('Content-Type', ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' })[ext] || 'application/octet-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.end(data);
-          } catch (e) { res.statusCode = 404; res.end(''); }
-          return;
-        }
-
         if (req.url.startsWith('/assets/') && req.url !== '/assets/pai.svg' && !req.url.startsWith('/assets/emo/')) {
           // 壁纸来源优先级：用户壁纸目录（%APPDATA%，升级不丢）→ 安装目录 live/assets（随包默认）
           // 各目录里取 mtime 最新的那个媒体文件；文件名随意。
