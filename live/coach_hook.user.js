@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.27.5
+// @version      1.27.6
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -185,6 +185,16 @@
     } catch (e) {}
   }
 
+  let bgVideo = null;
+  let bgRaf = 0;
+  function stopBg() {
+    try { if (bgRaf) { cancelAnimationFrame(bgRaf); bgRaf = 0; } } catch (e) {}
+    try { if (bgVideo) { bgVideo.pause(); bgVideo.remove(); } } catch (e) {}
+    bgVideo = null;
+    try { if (bgEl) bgEl.remove(); } catch (e) {}
+    bgEl = null;
+  }
+
   function applyBgMedia() {
     if (typeof GM_xmlhttpRequest !== 'function') { setBgChip('壁纸不可用（无 GM 权限）', false); return; }
     const t0 = Date.now();
@@ -198,25 +208,69 @@
             return;
           }
           const isVideo = (r.response.type || '').startsWith('video');
-          if (bgEl) { try { if (bgEl.pause) bgEl.pause(); } catch (e) {} bgEl.remove(); }
-          bgEl = document.createElement(isVideo ? 'video' : 'img');
+          stopBg();
+          if (!isVideo) {
+            // 图片：直接 <img>（这条路径实测一直正常）
+            bgEl = document.createElement('img');
+            bgEl.className = 'cjc-bg';
+            bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
+            bgEl.src = URL.createObjectURL(r.response);
+            panel.insertBefore(bgEl, bgShade);
+            setBgChip('', false);
+            reportBg({ ok: true, kind: 'image', ms: Date.now() - t0, bytes: r.response.size || 0 });
+            return;
+          }
+          // 视频：**不用 <video> 直接显示**（实机里它拿到了数据却一帧都不画）。
+          // 改为把视频逐帧画到 <canvas>：canvas 跟图片一样是位图，能正常显示。
+          bgVideo = document.createElement('video');
+          bgVideo.muted = true; bgVideo.loop = true; bgVideo.playsInline = true; bgVideo.preload = 'auto';
+          bgVideo.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+          document.body.appendChild(bgVideo);
+          bgVideo.onerror = () => reportBg({ ok: false, reason: 'video-error:' + (bgVideo.error && bgVideo.error.code) });
+
+          bgEl = document.createElement('canvas');
           bgEl.className = 'cjc-bg';
-          if (isVideo) { bgEl.muted = true; bgEl.loop = true; bgEl.autoplay = true; bgEl.playsInline = true; }
-          bgEl.src = URL.createObjectURL(r.response);
           panel.insertBefore(bgEl, bgShade);
-          if (isVideo) {
-            bgEl.play().catch(() => {
-              // 自动播放被拦：等用户第一次点击/按键再播（原来的兜底）
-              const kick = () => { bgEl.muted = true; bgEl.play().catch(() => {}); };
+          const ctx = bgEl.getContext('2d');
+          let painted = false;
+          const draw = () => {
+            try {
+              if (bgVideo && bgVideo.readyState >= 2 && bgVideo.videoWidth) {
+                if (bgEl.width !== bgVideo.videoWidth) {
+                  bgEl.width = bgVideo.videoWidth;
+                  bgEl.height = bgVideo.videoHeight;
+                  skinRatio = bgVideo.videoHeight / bgVideo.videoWidth;
+                  applyPanelSize();
+                }
+                ctx.drawImage(bgVideo, 0, 0, bgEl.width, bgEl.height);
+                if (!painted) {
+                  painted = true;
+                  setBgChip('', false);
+                  reportBg({ ok: true, kind: 'canvas', ms: Date.now() - t0, w: bgEl.width, h: bgEl.height });
+                }
+              }
+            } catch (e) {}
+            bgRaf = requestAnimationFrame(draw);
+          };
+          bgVideo.src = URL.createObjectURL(r.response);
+          bgVideo.addEventListener('loadeddata', () => {
+            draw();
+            bgVideo.play().catch(() => {
+              const kick = () => { bgVideo.muted = true; bgVideo.play().catch(() => {}); };
               document.addEventListener('pointerdown', kick, { once: true });
               document.addEventListener('keydown', kick, { once: true });
             });
-            bgEl.addEventListener('loadedmetadata', () => { skinRatio = (bgEl.videoHeight / bgEl.videoWidth) || 0; applyPanelSize(); });
-          } else {
-            bgEl.addEventListener('load', () => { skinRatio = (bgEl.naturalHeight / bgEl.naturalWidth) || 0; applyPanelSize(); });
-          }
-          setBgChip('', false);
-          reportBg({ ok: true, kind: isVideo ? 'video' : 'image', ms: Date.now() - t0, bytes: r.response.size || 0 });
+          });
+          bgVideo.load();
+          setTimeout(() => {
+            if (!painted) {
+              reportBg({
+                ok: false, reason: 'no-frame', ms: Date.now() - t0,
+                state: { rs: bgVideo.readyState, w: bgVideo.videoWidth, err: bgVideo.error && bgVideo.error.code },
+              });
+              setBgChip('壁纸加载失败（视频解码）', false);
+            }
+          }, 5000);
         } catch (e) { reportBg({ ok: false, reason: 'exception:' + e.message }); }
       },
       onerror: () => { setBgChip('壁纸加载失败（网络）', false); reportBg({ ok: false, reason: 'network' }); },

@@ -1640,6 +1640,12 @@ if (TEST_ACTIONS) {
             STATS.verWarned = true;
             out(APP.errors.line('USERSCRIPT_STALE') + `（脚本 v${f.v} / 服务端 v${APP.version.version}）`);
           }
+          // 脚本更新后（或页面重新加载后）版本对齐：解除告警并明确说一句，
+          // 否则那条"版本过旧"会永远挂在面板里，看起来像没生效。
+          if (APP && f.v && f.v === APP.version.version && STATS.verWarned) {
+            STATS.verWarned = false;
+            out(`✓ 页面脚本已同步到 v${f.v}`);
+          }
           handleFrame(f.dir, f.url || '', f.hex);
         }
         res.end('ok');
