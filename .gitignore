@@ -3,7 +3,9 @@ secrets.local.json
 
 # ===== 内部交接文档（含本地路径/缺陷清单，只留本地副本，不入开源仓）=====
 AGENTS.md
-docs/
+docs/*
+!docs/images/
+!docs/images/**
 v2.1/
 BACKUP.md
 

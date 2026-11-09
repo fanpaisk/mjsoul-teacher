@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
   把本工作目录的"该发布的文件"同步到发布仓（C:\Users\sk\Desktop\mjsoul-teacher）。
   **默认只做 dry-run 报告**，不改任何东西；加 -Apply 才真复制。
@@ -27,7 +27,9 @@ $ver = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).ve
 Write-Host "同步 $root → $Repo（v$ver）$(if (-not $Apply) { '  [dry-run]' } else { '' })" -ForegroundColor Cyan
 
 # 白名单：目录整体同步 + 若干单文件
-$dirs = @('app', 'build')
+# docs/images/ 是 README 首屏用的截图与 GIF（对外展示资产），单独放行；
+# docs/ 其余是交接文档，仍然不同步。
+$dirs = @('app', 'build', 'docs/images')
 $files = @(
   'package.json', 'README.md', 'CHANGELOG.md', 'DEVELOPING.md', 'SECURITY.md',
   'coach.js', 'liqi_new.json', 'structure_check.js', 'make_test_actions.js',
@@ -42,6 +44,7 @@ $never = @('secrets.local.json', 'live/mjb/mortal*.pth', 'live/mjb/s42-inference
   'live/assets/emo/**', 'local/**', 'live/v2/**', 'dev/**', 'docs/**', 'AGENTS.md', 'dist/**', 'config.json', '*.log')
 
 function Should-Skip([string]$rel) {
+  if ($rel -like 'docs/images/*') { return $false }
   foreach ($p in $never) {
     $pat = $p -replace '\\', '/'
     if ($rel -like $pat) { return $true }
@@ -115,7 +118,7 @@ if ($Prune) {
     $removed = 0
     foreach ($t in $tracked) {
       $norm = $t -replace '\\', '/'
-      $managed = $norm.StartsWith('app/') -or $norm.StartsWith('build/') -or ($files -contains $norm)
+      $managed = $norm.StartsWith('app/') -or $norm.StartsWith('build/') -or $norm.StartsWith('docs/images/') -or ($files -contains $norm)
       if (-not $managed) { continue }
       if (-not (Test-Path (Join-Path $root ($norm -replace '/', '\')))) {
         git rm -q -- $t

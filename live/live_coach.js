@@ -1381,12 +1381,17 @@ if (TEST_ACTIONS) {
         if (req.url === '/diag/bg' && req.method === 'POST') {
           try {
             const j = JSON.parse(body || '{}');
+            const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
             STATS.bgLast = {
               at: Date.now(), ok: !!j.ok, ms: j.ms || null, reason: j.reason || null,
+              // kind/w/h/state 是 D46 的验收入口（kind="canvas" 表示视频已逐帧画出来），别在字段过滤时丢掉
+              kind: typeof j.kind === 'string' ? j.kind : null,
+              w: num(j.w), h: num(j.h),
               type: j.type || null, bytes: j.bytes || null, tries: j.tries === undefined ? null : j.tries,
+              state: j.state && typeof j.state === 'object' ? j.state : null,
               script: j.v || null,
             };
-            obs(`壁纸${j.ok ? 'OK' : '失败'}${j.ms ? ' ' + j.ms + 'ms' : ''}${j.reason ? ' ' + j.reason : ''}${j.bytes ? ' ' + j.bytes + 'B' : ''}`);
+            obs(`壁纸${j.ok ? 'OK' : '失败'}${j.kind ? '[' + j.kind + ']' : ''}${j.ms ? ' ' + j.ms + 'ms' : ''}${j.reason ? ' reason=' + j.reason : ''}${j.bytes ? ' ' + j.bytes + 'B' : ''}`);
           } catch (e) {}
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end('{"ok":true}');

@@ -1,14 +1,69 @@
-# 雀魂教练（Mahjong Soul Coach）
+# 雀魂教练 · Mahjong Soul Coach
 
-一个**完全本地运行**的雀魂 AI 教练：捕获对局数据 → 本机神经网络评估 → 游戏内悬浮面板给出建议。
+**切完牌，悬浮面板告诉你：AI 会怎么打、你这一手差了多少。全部在本机算，不联网、不代打。**
 
-所有推理都在你自己的 CPU 上完成，**不联网、不需要账号、不上传任何数据**。
+[![Release](https://img.shields.io/github/v/release/fanpaisk/mjsoul-teacher?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/fanpaisk/mjsoul-teacher/total?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?style=flat-square)
+![Local](https://img.shields.io/badge/inference-100%25%20local-2ea44f?style=flat-square)
 
-> ⚠️ **免责声明**：使用第三方工具读取游戏数据可能违反《雀魂用户协议》。本项目仅供学习研究，
-> 请勿在段位场使用，风险自负。**它不会替你打牌**——不点击、不发送游戏请求、不修改游戏数据，
-> 只在你切完牌之后告诉你"刚才那一手，AI 会怎么选"。
+![游戏内悬浮面板：本手复盘的候选打法与评分](docs/images/panel.png)
+
+<p align="center">
+  <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
+    <img alt="下载 Windows 安装包" src="https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD-Windows%20%E5%AE%89%E8%A3%85%E5%8C%85-2ea44f?style=for-the-badge">
+  </a>
+</p>
+
+<p align="center">
+  152 MB · 免管理员 · 需要 Chrome/Edge + Tampermonkey
+</p>
+
+> ⚠️ **使用前必读**：使用第三方工具读取游戏数据可能违反《雀魂用户协议》。本项目仅供学习研究，
+> 请勿在段位场使用，风险自负。
+>
+> - **它不替你打牌**：不点击、不发送游戏请求、不修改游戏数据，只在你切完牌之后告诉你「刚才那一手，AI 会怎么选」。
+> - **它不预判**：从你摸牌到你切牌，面板上什么都没有。你做完决定，它才说话。
+> - **它仍有风险**：读的是对局数据，违规的可能性存在。建议先用友人场复盘。
 
 ---
+
+## 它是什么
+
+打雀魂最难受的不是输，是**不知道自己哪一手打错了**。
+
+牌谱屋能看统计，但要上传牌谱，给的是数据不是「这一手该打什么」；云端 AI 复盘要联网、要付费，
+而且把对局传出去这件事本身就让人不放心。
+
+这个工具换个做法：把 Mortal-S42 神经网络**整个搬到你的电脑上**，对局数据只在本机流转，
+切完牌立刻给出候选打法的评分，以及「你的选择相对最优解差多少」。
+
+- **不联网**：推理全在本机 CPU，牌谱不出你的电脑，拔了网线也能用
+- **不代打**：只读对局数据，不点击、不发请求、不改客户端
+- **复盘优先**：默认等你切完牌才出评价——先做决策，再看答案
+
+**适合谁**：想认真复盘的雀魂玩家、日麻学习者、不想把牌谱传到云端的隐私敏感者。
+**不适合谁**：想自动打牌的、想在段位场开挂的——这个工具明确不做，也不打算做。
+
+## 30 秒看效果
+
+![演示：切牌后面板给出评分](docs/images/demo.gif)
+
+| 你看到的 | 含义 |
+|---|---|
+| 候选打法 + 百分比 | AI 认为从最优到次优的选择，越靠左越接近最优 |
+| 下方「你切了 X（Mortal 第 N 名）」 | 你的实际选择在 AI 眼里排第几 |
+| 左下角 `教练 N 帧` | 数据接通状态；不涨就是没连上 |
+
+> 上图与动图都来自**友人场**。段位场请你自己判断风险。
+
+## 和常见方案的区别
+
+- **牌谱屋**：事后统计，要上传牌谱，回答的是「我整体打得怎么样」，不是「这一手该打什么」
+- **云端 AI 复盘**：要联网、通常要付费，对局数据要离开你的电脑
+- **本项目**：装一次，之后全程离线；给的是「这一手」的即时评分，不是赛后报告
+
+（各家功能以官方说明为准，这里只说定位差异。）
 
 ## 它做什么
 
@@ -21,20 +76,23 @@
 | **隐私三档** | F9 隐藏 / 默认黑牌（按住查看）/ 点击全部变黑 |
 | **断线自愈** | 重连后按牌山计数去重重放，引擎状态无缝续上 |
 
-**它不是什么**：不是自动打牌机器人，不联机、不代打、不改客户端文件。
+## 它不是什么
 
----
+- 不是自动打牌机器人：**不点击牌桌、不发送游戏请求、不修改客户端文件**
+- 不是实时提示器：**面板在你切牌之前保持沉默**，实时模式已在 1.27.0 从公开版移除
+- 不是云端服务：没有账号、没有遥测、没有任何数据上传
 
 ## 安装（Windows 10/11）
 
-1. 到 [Releases](../../releases) 下载最新的 `MahjongSoulCoach-Setup-x.y.z.exe`
-2. 双击安装。Windows 可能提示"未知发布者"（安装包没有代码签名），点 **更多信息 → 仍要运行**
+**前置条件**：Chrome 或 Edge 浏览器 + [Tampermonkey](https://www.tampermonkey.net/) 扩展
+（新版 Chrome 还需在扩展详情页打开"允许用户脚本"和开发者模式）。
+
+1. 到 [Releases](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) 下载最新的
+   `MahjongSoulCoach-Setup-x.y.z.exe`（约 152 MB，打包了 PyTorch 运行时，所以大）
+2. 双击安装。Windows 会提示"未知发布者"（安装包没有代码签名），点 **更多信息 → 仍要运行**
 3. 装完托盘出现圆形图标 = 成功（免管理员，装到 `%LOCALAPPDATA%\MahjongSoulCoach`）
 
-**前置条件**：Chrome 或 Edge 浏览器 + [Tampermonkey](https://www.tampermonkey.net/) 扩展
-（新版 Chrome 还需在扩展详情页打开"允许用户脚本"和开发者模式）。向导第 3 步会带你装。
-
----
+> 装不上 / 被杀软拦？看下面「常见问题」，或到 [Issues](https://github.com/fanpaisk/mjsoul-teacher/issues) 贴日志。
 
 ## 第一次使用
 
@@ -47,7 +105,7 @@
 | 3 浏览器脚本 | 点"安装/更新脚本"，在 Tampermonkey 弹窗里确认 |
 | 4 连接游戏 | 打开雀魂并进入对局，看到"已接通（N 帧）"即完成 |
 
----
+![设置向导：四步，全自动检查](docs/images/setup.png)
 
 ## 日常使用
 
@@ -66,9 +124,7 @@
 | 面板跑出屏幕 | 点左下角 `教练 N帧` 角标，一键归位 |
 
 **提醒时机固定为复盘模式**：你切完牌之后才出现该手提醒与对比。
-实时模式（摸牌瞬间给建议）在当前版本**不开放** —— 这个工具的定位是"事后复盘、提升牌效"，不是代打。
-
----
+实时模式（摸牌瞬间给建议）在公开版**不开放**——这个工具的定位是"事后复盘、提升牌效"，不是代打。
 
 ## 常见问题
 
@@ -79,10 +135,9 @@
 | 提示"缺少模型" | 向导第 2 步下载（42 MB） |
 | 提示"端口被占用" | 托盘 → 停止；仍不行就重启电脑 |
 | 杀毒软件报毒 | 未签名 exe 的常见误报，加白名单或换便携版 |
-| 其他问题 | 设置页 → **导出诊断包**，把 zip 发到 Issues |
+| 安装包为什么这么大 | 内含 PyTorch 运行时，模型另算（42 MB），没有云端所以只能本地带 |
 | 怎么升级 | 设置页 →「检查更新」只会**提示**有新版本并给下载链接，不会自己下载安装。下载新安装包覆盖安装即可，配置和壁纸都保留 |
-
----
+| 其他问题 | 设置页 → **导出诊断包**，把 zip 发到 Issues |
 
 ## 隐私与安全
 
@@ -92,11 +147,14 @@
 - 模型下载带 SHA256 校验；不需要管理员权限；不做开机自启
 - 细节与漏洞报告方式见 [SECURITY.md](SECURITY.md)
 
----
-
 ## 开发与打包
 
 见 [DEVELOPING.md](DEVELOPING.md)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 我的其他工具
+
+- [减仓计算器](https://github.com/fanpaisk/jiancang) — 纯前端、零后端的基金减仓试算器
+- [DSH 微信提醒](https://github.com/fanpaisk/dsh-pushplus-notify) — AI 任务跑完推送到微信
 
 ## 致谢
 
@@ -105,3 +163,7 @@
 [libriichi](https://github.com/Equim-chan/libriichi)、推理运行时 PyTorch（BSD）。
 
 本项目不含任何游戏素材；背景视频、表情包等主题素材由用户自备。
+
+---
+
+如果它帮你少点了一炮，点个 ⭐ 就是最好的支持。
