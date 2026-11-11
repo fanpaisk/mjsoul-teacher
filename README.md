@@ -1,6 +1,7 @@
 # 雀魂教练 · Mahjong Soul Coach
 
 **建议只在友人场使用或自己开个练习场拉长思考时间每一手练习复盘使用**
+
 **切完牌，悬浮面板告诉你：AI 会怎么打、你这一手差了多少。全部在本机算，不联网、不代打。**
 
 [![Release](https://img.shields.io/github/v/release/fanpaisk/mjsoul-teacher?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases/latest)
