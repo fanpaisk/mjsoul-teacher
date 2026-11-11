@@ -32,14 +32,21 @@
 
   <div class="card">
     <label>提醒时机</label>
-    <div class="opt" style="border-bottom:0">
+    <div class="opt">
+      <input type="radio" name="mode" id="mReview" value="review">
       <div>
-        <b>复盘模式（当前版本固定）</b>
-        <span>你切完牌之后才出现该手提醒与对比：先做决策，再看教练怎么评价。</span>
+        <b>复盘模式（推荐）</b>
+        <span>你切完牌之后才出现该手提醒与对比：先做决策，再看教练评价。</span>
       </div>
-      <span class="badge" style="border-color:#5c4a1c;color:#fbbf24">🔒 固定</span>
     </div>
-    <div class="hint">实时模式（摸牌瞬间就给建议）暂未开放。这个工具的定位是「事后复盘、提升牌效」，不是代打。</div>
+    <div class="opt" style="border-bottom:0">
+      <input type="radio" name="mode" id="mRealtime" value="realtime">
+      <div>
+        <b>实时模式（风险自负）</b>
+        <span>摸到牌就给出建议。它会在你做决定之前告诉你答案，属于「局中辅助」。</span>
+      </div>
+    </div>
+    <div class="hint" id="modeWarn" style="color:#fbbf24;display:none"></div>
   </div>
 
   <div class="card">
@@ -99,7 +106,10 @@ let cfg = null;
 
 (async () => {
   cfg = await (await fetch('/config', { cache: 'no-store' })).json();
-  const mode = 'review';   // 公共版锁定复盘模式，不再读用户选择
+  const isReview = cfg.review !== false;
+  $('mReview').checked = isReview;
+  $('mRealtime').checked = !isReview;
+  showModeWarn(!isReview);
   $('dark').checked = !!cfg.tileDark;
   $('port').value = cfg.port || 18766;
   const e = cfg.engine || {};
@@ -107,13 +117,14 @@ let cfg = null;
     '版本 <code>v' + cfg.version + '</code>',
     '运行时 ' + (e.pythonFound ? '就绪' : '缺失'),
     '模型 ' + (e.modelLabel || '未找到'),
-    '模式 复盘（固定）',
+    '模式 ' + (isReview ? '复盘' : '实时'),
   ].join(' · ');
 })();
 
 $('save').onclick = async () => {
+  const picked = document.querySelector('input[name="mode"]:checked');
   const body = {
-    mode: 'review',          // 写死：服务端也会拒绝 realtime（公共版边界，见 DECISIONS D5）
+    mode: (picked && picked.value) || 'review',
     tileDark: $('dark').checked,
     port: parseInt($('port').value, 10) || 18766,
   };
@@ -123,6 +134,17 @@ $('save').onclick = async () => {
   if (r.ok) { $('toast').classList.add('show'); setTimeout(() => $('toast').classList.remove('show'), 1800); }
   else alert('保存失败：' + (r.error || '未知错误'));
 };
+function showModeWarn(on) {
+  const el = $('modeWarn');
+  if (!el) return;
+  el.style.display = on ? 'block' : 'none';
+  el.textContent = on
+    ? '⚠ 实时模式会在你切牌前给出答案，这属于局中辅助。第三方工具读取对局数据本身就可能违反《雀魂用户协议》，建议只在友人场使用，风险自负。'
+    : '';
+}
+document.querySelectorAll('input[name="mode"]').forEach((el) => {
+  el.onchange = () => showModeWarn($('mRealtime').checked);
+});
 $('back').onclick = () => { location.href = '/setup'; };
 
 /* ---------- 壁纸 ---------- */

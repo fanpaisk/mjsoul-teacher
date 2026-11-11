@@ -1676,6 +1676,11 @@ if (TEST_ACTIONS) {
     out('============================================');
     out('  ' + ver + ' 已启动（中继 127.0.0.1:' + PORT + '）');
     out('  决策引擎: Mortal 本地神经网络' + (diag ? ' · ' + diag.modelLabel : ''));
+    out('  提醒时机: ' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
+    if (!S.reviewMode) {
+      out('  ⚠ 实时模式：会在你切牌前给出建议，属于局中辅助。');
+      out('    第三方工具读取对局数据存在协议风险，建议只在友人场使用，风险自负。');
+    }
     out('  实时输出: ' + OUT_FILE);
     if (diag) {
       if (!diag.pythonFound) out(APP.errors.line('PYTHON_MISSING'));
