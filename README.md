@@ -49,6 +49,12 @@
 
 ![实时模式](docs/images/demo-realtime.gif)
 
+## 托盘程序图标
+
+装完托盘里就一个图标：绿色 = 运行中，右键是全部入口（启动/停止、向导、设置、日志）。
+
+![托盘程序图标](docs/images/demo-clip.gif)
+
 ## 安装
 
 1. [下载](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
