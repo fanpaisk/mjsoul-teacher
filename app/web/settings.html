@@ -96,7 +96,7 @@
     <button id="save">保存</button>
     <button class="ghost" id="back">返回设置向导</button>
   </div>
-  <div class="hint">保存后需重启教练生效（托盘菜单 → 停止 / 启动）。</div>
+  <div class="hint">保存后立即生效，不用重启，也不用刷新游戏页。</div>
 </div>
 <div class="toast" id="toast">已保存</div>
 
@@ -131,7 +131,15 @@ $('save').onclick = async () => {
   const r = await (await fetch('/api/settings', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })).json();
-  if (r.ok) { $('toast').classList.add('show'); setTimeout(() => $('toast').classList.remove('show'), 1800); }
+  if (r.ok) {
+    if (r.mode) {
+      $('mReview').checked = r.mode === 'review';
+      $('mRealtime').checked = r.mode !== 'review';
+      showModeWarn(r.mode !== 'review');
+    }
+    $('toast').classList.add('show');
+    setTimeout(() => $('toast').classList.remove('show'), 1800);
+  }
   else alert('保存失败：' + (r.error || '未知错误'));
 };
 function showModeWarn(on) {
