@@ -669,7 +669,7 @@ function handleAction(name, d) {
         S.hands[S.seat] = S.myTiles.slice();
         if (d.dora) S.seen[mj.tileId(d.dora)]++;
         out(`【${S.kyokuLabel}】宝牌 ${T(d.dora) || '?'}｜点数 ${JSON.stringify(d.scores || [])}`);
-        if (drawn) { S.junme = 1; S.lastDrawn = drawn; requestAdvice(drawn, 'draw'); }
+        if (drawn) { S.junme = 1; S.lastDrawn = drawn; if (!S.reviewMode) requestAdvice(drawn, 'draw'); }
       } else {
         // 非庄家：扣起，等首条个性化摸牌揭晓座位
         S.pendingNewRound = d;
@@ -682,7 +682,7 @@ function handleAction(name, d) {
     S.hands[S.seat] = S.myTiles.slice();
     if (d.dora) S.seen[mj.tileId(d.dora)]++;
     out(`【${S.kyokuLabel}】宝牌 ${T(d.dora) || '?'}｜点数 ${JSON.stringify(d.scores || [])}`);
-    if (drawn) { S.junme = 1; S.lastDrawn = drawn; requestAdvice(drawn, 'draw'); }
+    if (drawn) { S.junme = 1; S.lastDrawn = drawn; if (!S.reviewMode) requestAdvice(drawn, 'draw'); }
     return;
   }
 
