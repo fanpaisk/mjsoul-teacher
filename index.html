@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>雀魂教练 · 本地 AI 作弊工具</title>
+<meta name="description" content="雀魂本地 AI 教练：Mortal-S42 魂天水平，一键启动，实时模式上线。不联网、本机推理，不用装证书、不用 MITM 代理。">
+<style>
+  :root{--bg:#0e1014;--fg:#eef0f5;--dim:#96a0b0;--acc:#e2a86a;--line:#242833;--warn:#f0c987}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:56px 24px}
+  h1{font-size:46px;line-height:1.15;margin:0 0 14px}
+  .lead{font-size:19px;color:var(--dim);margin:0 0 26px}
+  .blunt{font-size:18px;color:#f3d9b0;border-left:3px solid var(--acc);padding-left:14px;margin:0 0 26px}
+  .btn{display:inline-block;background:var(--acc);color:#1a1208;font-weight:700;padding:14px 26px;border-radius:10px;text-decoration:none}
+  .meta{color:var(--dim);font-size:14px;margin-top:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:44px 0}
+  .card{border:1px solid var(--line);border-radius:12px;padding:20px;background:#12151b}
+  .card b{display:block;margin-bottom:6px;color:var(--acc)}
+  .card span{color:var(--dim);font-size:14.5px}
+  img{width:100%;border-radius:12px;border:1px solid var(--line)}
+  h2{font-size:22px;margin:44px 0 14px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  td,th{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left}
+  th{color:var(--dim);font-weight:500}
+  .warn{border:1px solid #5c4a1c;background:#1c170c;color:var(--warn);border-radius:10px;padding:16px;font-size:14.5px;margin:36px 0}
+  footer{color:var(--dim);font-size:13px;margin-top:52px;border-top:1px solid var(--line);padding-top:18px}
+  a{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>雀魂教练</h1>
+  <p class="blunt">说清楚：这是作弊工具。</p>
+  <p class="lead">它读你的对局数据，在你切牌前给出答案。开了实时模式，你摸牌它就说打哪张。<br>
+  不掩饰。要不要用，你自己判断。</p>
+  <a class="btn" href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">下载 Windows 安装包 v1.1.0</a>
+  <p class="meta">152 MB · 免管理员 · Chrome/Edge + Tampermonkey · Windows 10/11</p>
+
+  <div class="grid">
+    <div class="card"><b>实时模式</b><span>摸牌即建议，默认关闭，开了它会在你切牌前说话。</span></div>
+    <div class="card"><b>复盘模式</b><span>切完牌才给评价：这一手 AI 会怎么打、你打的排第几。</span></div>
+    <div class="card"><b>魂天水平</b><span>Mortal-S42 完整权重（192×40），不是精简版。每手几十毫秒，全在本机 CPU。</span></div>
+  </div>
+
+  <h2>为什么装这个而不是别的</h2>
+  <table>
+    <tr><th></th><th>本项目</th><th>自动打牌类（如 MahjongCopilot）</th></tr>
+    <tr><td>一键启动</td><td>安装包四步，托盘常驻</td><td>装 Python + Playwright + 浏览器</td></tr>
+    <tr><td>替不替你打</td><td>不，点牌永远是你自己</td><td>会，自动点击出牌</td></tr>
+    <tr><td>MITM 证书</td><td>不装</td><td>要装并信任</td></tr>
+    <tr><td>系统代理</td><td>不改</td><td>要改</td></tr>
+    <tr><td>网络请求</td><td>只在本机 127.0.0.1</td><td>经过中间人代理</td></tr>
+  </table>
+  <p class="meta">少了这几样，不等于安全——只是系统里少三个会出问题的地方。</p>
+
+  <h2>长什么样</h2>
+  <video src="images/rt.webm" poster="images/rt-poster.jpg" autoplay muted loop playsinline style="width:100%;border-radius:12px;border:1px solid #242833"></video>
+  <p class="meta">实时模式：摸牌即给建议</p>
+  <video src="images/main.webm" poster="images/main-poster.jpg" autoplay muted loop playsinline style="width:100%;border-radius:12px;border:1px solid #242833;margin-top:22px"></video>
+  <p class="meta">复盘模式：切完牌才说话</p>
+
+  <div class="warn">
+    <b>风险自负。</b>读对局数据这件事，本身就踩在《雀魂用户协议》的边上。我不承诺你不会被封，也给不了任何保证。<br>
+    建议：别在段位场用。要练，就在友人场开个练习房。
+  </div>
+
+  <footer>
+    <a href="https://github.com/fanpaisk/mjsoul-teacher">GitHub</a> ·
+    <a href="https://github.com/fanpaisk/mjsoul-teacher/issues">反馈</a> ·
+    Mortal-S42 · 本机推理 · 无遥测
+  </footer>
+</div>
+</body>
+</html>
