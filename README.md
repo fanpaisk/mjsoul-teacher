@@ -45,6 +45,10 @@
 
 ![演示](docs/images/demo.gif)
 
+**实时模式**（摸牌即提醒，设置里手动开，风险自负）：
+
+![实时模式](docs/images/demo-realtime.gif)
+
 ## 安装
 
 1. [下载](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
