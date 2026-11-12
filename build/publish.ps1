@@ -31,7 +31,7 @@ Write-Host "同步 $root → $Repo（v$ver）$(if (-not $Apply) { '  [dry-run]' 
 # docs/ 其余是交接文档，仍然不同步。
 $dirs = @('app', 'build', 'docs/images')
 $files = @(
-  'package.json', 'README.md', 'CHANGELOG.md', 'DEVELOPING.md', 'SECURITY.md',
+  'package.json', 'README.md', 'README.en.md', 'CHANGELOG.md', 'DEVELOPING.md', 'SECURITY.md',
   'coach.js', 'liqi_new.json', 'structure_check.js', 'make_test_actions.js',
   'live/live_coach.js', 'live/decode.js', 'live/coach_hook.user.js',
   'live/assets/pai.svg'
