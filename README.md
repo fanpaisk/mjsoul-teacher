@@ -2,7 +2,7 @@
 
 **如果对你有帮助，顺手点个star⭐吧QAQ**
 
-**有什么问题都可以开Issue哦**
+**有什么问题都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**
 
 **先说清楚：这东西是作弊。**
 
