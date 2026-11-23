@@ -1,6 +1,10 @@
 # 작혼 코치 · Mahjong Soul Coach
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
+**下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**
+
+**有什么问题都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**
 
 **분명히 말합니다: 이건 치트 도구입니다.**
 

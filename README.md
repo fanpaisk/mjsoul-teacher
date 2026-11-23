@@ -2,6 +2,10 @@
 
 [中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
+**下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**
+
+**有什么问题都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**
+
 **先说清楚：这东西是作弊。**
 
 它读你的对局数据，在你做决定之前给答案。开了**实时模式**，你摸牌它就说打哪张——这就是作弊，我不洗。
