@@ -45,10 +45,22 @@ Tested: the Global Chinese client (`game.maj-soul.com`) and the Japanese client 
 
 The English client (`mahjongsoul.game.yo-star.com`) is matched by the userscript but **has not been tested end to end**. If the panel shows no frames there, please open an issue — that is useful information, not a complaint.
 
-/## Install\n/
-1. [Download](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
+## Install
+1. [Download](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.2.0.exe`
 2. Double-click (unsigned; SmartScreen → More info → Run anyway)
 3. Tray icon → wizard (4 clicks)
+
+## How to start it
+
+The installer's last page has "Launch" checked by default — a round tray icon appears when done
+(on Windows 11 it may hide behind the `^` arrow).
+
+**After that, every time**:
+
+1. **Start menu → Mahjong Soul Coach** (the installer can add a desktop shortcut)
+2. Right-click the tray icon → start/stop, setup wizard, settings, logs
+
+> It does **not** start on boot (by design). Click the Start-menu icon after each reboot.
 
 ## Risk
 

@@ -47,12 +47,24 @@
 
 영어 서버(`mahjongsoul.game.yo-star.com`)는 스크립트에 포함했지만 **실기 검증은 아직**입니다. 프레임이 늘지 않으면 Issue 로 알려 주세요.
 
-/## 설치\n/
+## 설치
 1. [다운로드](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.2.0.exe`
 2. 더블클릭 (서명 없음. SmartScreen 은 「추가 정보 → 실행」)
 3. 트레이 아이콘 → 마법사 (4번 클릭)
 
 문제가 있으면 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues) 로.
+
+## 실행 방법
+
+설치 마지막 화면에서 「실행」이 기본 체크되어 있습니다. 완료되면 트레이에 동그란 아이콘이 생깁니다
+(Windows 11 에서는 `^` 안에 숨겨져 있을 수 있습니다).
+
+**이후에는 매번**:
+
+1. **시작 메뉴 → 작혼 코치** (설치 시 바탕화면 바로가기 생성 가능)
+2. 트레이 아이콘 우클릭 → 시작/중지, 설정 마법사, 설정, 로그
+
+> 자동 시작은 **하지 않습니다**(설계상). 재부팅 후에는 시작 메뉴에서 직접 실행하세요.
 
 ## 마지막으로: 위험은 본인 부담
 

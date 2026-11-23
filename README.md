@@ -1,7 +1,5 @@
 # 雀魂教练 · Mahjong Soul Coach
 
-**支持四国语言**
-
 [中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 **下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**
@@ -72,12 +70,23 @@
 
 英文服（`mahjongsoul.game.yo-star.com`）脚本已覆盖，**但还没有实机验证**。如果那边面板帧数不涨，欢迎开 Issue——这算有用信息，不算找茬。
 
-/## 安装\n/
-1. [下载](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
+## 安装
+1. [下载](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.2.0.exe`
 2. 双击（没签名，SmartScreen 点「更多信息 → 仍要运行」）
 3. 托盘右键 → 向导，点四下：环境自检 → 模型（自带）→ 装脚本 → 进游戏
 
 卡住就开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)，或设置页导出诊断包。
+
+## 装完怎么启动
+
+安装程序最后一步默认勾了「立即启动」，完成后托盘出现圆形图标（Windows 11 可能收在 `^` 里）。
+
+**之后每次用**：
+
+1. **开始菜单 → 雀魂教练**（安装时也能勾桌面快捷方式）
+2. 托盘图标右键 → 启动 / 停止教练、设置向导、设置、查看日志
+
+> 教练**不会开机自启**（设计如此），每次开机后要自己点一下开始菜单里的图标。
 
 ## 最后，风险自负
 
