@@ -61,7 +61,7 @@ $supportBlock = @(
   '',
   '**下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**',
   '',
-  '**有什么问题都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**'
+  '**有什么问题和修改建议都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**'
 )
 foreach ($rf in @('README.md','README.en.md','README.ja.md','README.ko.md')) {
   $rp = Join-Path $root $rf
