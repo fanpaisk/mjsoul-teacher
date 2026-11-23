@@ -53,6 +53,28 @@ function Should-Skip([string]$rel) {
   return $false
 }
 
+# ---- README 首屏支持块守卫（用户指定，永不修改）----
+# 四个 README 的第 3–7 行必须逐字一致；被改动或移位就直接失败，避免同步时冲掉用户的
+# 语言链接 / star 号召 / Issue 引导。
+$supportBlock = @(
+  '[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)',
+  '',
+  '**下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**',
+  '',
+  '**有什么问题都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**'
+)
+foreach ($rf in @('README.md','README.en.md','README.ja.md','README.ko.md')) {
+  $rp = Join-Path $root $rf
+  if (-not (Test-Path $rp)) { throw "README 守卫：缺少 $rf" }
+  $lines = @(Get-Content $rp -Encoding UTF8)
+  if ($lines.Count -lt 7) { throw "README 守卫：$rf 行数不足" }
+  for ($i = 0; $i -lt $supportBlock.Count; $i++) {
+    if ($lines[2 + $i] -ne $supportBlock[$i]) {
+      throw "README 守卫：$rf 第 $((3 + $i)) 行被改动"
+    }
+  }
+}
+
 $plan = @()
 foreach ($d in $dirs) {
   $srcDir = Join-Path $root $d
