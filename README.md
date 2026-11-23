@@ -1,5 +1,7 @@
 # 雀魂教练 · Mahjong Soul Coach
 
+**支持四国语言**
+
 [中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 **下载了觉得还行的姥爷们，顺手点个star⭐呗，或者分享一下吧QAQ**
