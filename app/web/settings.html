@@ -1,110 +1,124 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>雀魂教练 · 设置</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title data-i18n="settings.title">设置</title>
 <style>
-  :root{--bg:#14161b;--card:#1c1f26;--line:#2b303b;--fg:#e8e6e3;--dim:#9aa0ab;--acc:#e0a96d}
+  :root{--bg:#0e1014;--fg:#eef0f5;--dim:#96a0b0;--acc:#e2a86a;--line:#242833}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.7 "Microsoft YaHei",system-ui,sans-serif}
-  .wrap{max-width:640px;margin:0 auto;padding:32px 20px 64px}
-  h1{font-size:19px;margin:0 0 18px;font-weight:600}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
-  label{display:block;margin:0 0 6px;color:var(--dim);font-size:13px}
-  .opt{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #23262e}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  h1{font-size:26px;margin:0 0 22px}
+  .card{border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;background:#12151b}
+  .card>label{display:block;color:var(--acc);font-size:13px;margin-bottom:10px}
+  .opt{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
   .opt:last-child{border-bottom:0}
-  .opt input{margin-top:5px}
-  .opt b{font-weight:600;display:block}
+  .opt b{display:block;font-size:14px}
   .opt span{color:var(--dim);font-size:12.5px}
-  input[type=number]{width:110px;background:#111318;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px}
+  .hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+  select,input[type=number]{background:#111318;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px}
   button{background:var(--acc);color:#1a1208;border:0;border-radius:7px;padding:9px 16px;font-size:13px;cursor:pointer;font-weight:600}
   button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:400}
-  .hint{color:var(--dim);font-size:12.5px;margin-top:10px}
   .toast{position:fixed;right:20px;bottom:20px;background:#25603c;color:#d9f7e4;padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .25s}
   .toast.show{opacity:1}
   code{background:#111318;padding:1px 5px;border-radius:4px;font-size:12px}
 </style>
+<script src="/i18n-client.js"></script>
 </head>
 <body>
 <div class="wrap">
-  <h1>设置</h1>
+  <h1 data-i18n="settings.title">设置</h1>
 
   <div class="card">
-    <label>提醒时机</label>
+    <label data-i18n="settings.lang.title">语言</label>
+    <select id="lang">
+      <option value="auto" data-i18n="settings.lang.auto">自动（跟随浏览器）</option>
+      <option value="zh-CN">中文</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+      <option value="ko">한국어</option>
+    </select>
+    <div class="hint" id="langHint" data-i18n="settings.lang.hint"></div>
+  </div>
+
+  <div class="card">
+    <label data-i18n="settings.mode.title">提醒时机</label>
     <div class="opt">
       <input type="radio" name="mode" id="mReview" value="review">
       <div>
-        <b>复盘模式（推荐）</b>
-        <span>你切完牌之后才出现该手提醒与对比：先做决策，再看教练评价。</span>
+        <b data-i18n="settings.mode.review">复盘模式（推荐）</b>
+        <span data-i18n="settings.mode.reviewDesc">你切完牌之后才出现该手提醒与对比：先做决策，再看教练评价。</span>
       </div>
     </div>
     <div class="opt" style="border-bottom:0">
       <input type="radio" name="mode" id="mRealtime" value="realtime">
       <div>
-        <b>实时模式（风险自负）</b>
-        <span>摸到牌就给出建议。它会在你做决定之前告诉你答案，属于「局中辅助」。</span>
+        <b data-i18n="settings.mode.live">实时模式（风险自负）</b>
+        <span data-i18n="settings.mode.liveDesc">摸到牌就给出建议。它会在你做决定之前告诉你答案，属于「局中辅助」。</span>
       </div>
     </div>
     <div class="hint" id="modeWarn" style="color:#fbbf24;display:none"></div>
   </div>
 
   <div class="card">
-    <label>牌面显示</label>
+    <label data-i18n="settings.tiles.title">牌面显示</label>
     <div class="opt"><input type="checkbox" id="dark">
-      <div><b>默认黑牌</b><span>牌面默认全黑，按住某张牌临时查看。直播/录屏时防止手牌泄露。</span></div></div>
+      <div><b data-i18n="settings.tiles.dark">默认黑牌</b><span data-i18n="settings.tiles.darkDesc">牌面默认全黑，按住某张牌临时查看。</span></div></div>
   </div>
 
   <div class="card">
-    <label>服务端口</label>
+    <label data-i18n="settings.port.title">服务端口</label>
     <input type="number" id="port" min="1024" max="65535">
-    <div class="hint">改端口后需要同步改页面脚本里的地址（默认 18766，一般不用动）。</div>
+    <div class="hint" data-i18n="settings.port.hint">改端口后需要同步改页面脚本里的地址。</div>
   </div>
 
   <div class="card">
-    <label>当前环境</label>
-    <div class="hint" id="env">读取中…</div>
+    <label data-i18n="settings.env.title">当前环境</label>
+    <div class="hint" id="env" data-i18n="settings.env.loading">读取中…</div>
   </div>
 
   <div class="card">
-    <label>面板壁纸</label>
-    <div class="hint" id="wpNow">读取中…</div>
+    <label data-i18n="settings.wallpaper.title">面板壁纸</label>
+    <div class="hint" id="wpNow"></div>
     <div class="opt" style="border-bottom:0;margin-top:8px">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <input type="file" id="wpFile" accept="video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp" style="color:var(--dim);font-size:12.5px">
-        <button class="ghost" id="wpUpload">上传</button>
-        <button class="ghost" id="wpReset">恢复默认</button>
+        <button class="ghost" id="wpUpload" data-i18n="settings.wallpaper.upload">上传</button>
+        <button class="ghost" id="wpReset" data-i18n="settings.wallpaper.reset">恢复默认</button>
       </div>
       <span id="wpMsg" style="margin-top:6px;display:block;font-size:12.5px;color:var(--dim)"></span>
-      <span class="hint">支持 mp4 / webm / png / jpg / gif / webp（≤64 MB）。面板高度按壁纸比例自适应；上传后刷新游戏页生效。</span>
+      <span class="hint" data-i18n="settings.wallpaper.hint">支持 mp4 / webm / png / jpg / gif / webp（≤64 MB）。</span>
     </div>
   </div>
 
   <div class="card">
-    <label>维护</label>
+    <label data-i18n="settings.maint.title">维护</label>
     <div class="opt" style="border-bottom:0">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="ghost" id="btnScript2">更新页面脚本</button>
-        <button class="ghost" id="btnUpdate">检查更新</button>
-        <button class="ghost" id="btnDiag">导出诊断包</button>
+        <button class="ghost" id="btnScript2" data-i18n="settings.maint.script">更新页面脚本</button>
+        <button class="ghost" id="btnUpdate" data-i18n="settings.maint.update">检查更新</button>
+        <button class="ghost" id="btnDiag" data-i18n="settings.maint.diag">导出诊断包</button>
       </div>
       <span id="opsResult" style="margin-top:6px;display:block"></span>
     </div>
   </div>
 
   <div style="display:flex;gap:10px">
-    <button id="save">保存</button>
-    <button class="ghost" id="back">返回设置向导</button>
+    <button id="save" data-i18n="settings.save">保存</button>
+    <button class="ghost" id="back" data-i18n="settings.back">返回设置向导</button>
   </div>
-  <div class="hint">保存后立即生效，不用重启，也不用刷新游戏页。</div>
+  <div class="hint" data-i18n="settings.saveHint">保存后立即生效。</div>
 </div>
-<div class="toast" id="toast">已保存</div>
+<div class="toast" id="toast" data-i18n="settings.saved">已保存</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
+const T = (k, v) => (window.I18N ? I18N.t(k, v) : k);
 let cfg = null;
 
 (async () => {
+  await I18N.init();
   cfg = await (await fetch('/config', { cache: 'no-store' })).json();
   const isReview = cfg.review !== false;
   $('mReview').checked = isReview;
@@ -112,13 +126,15 @@ let cfg = null;
   showModeWarn(!isReview);
   $('dark').checked = !!cfg.tileDark;
   $('port').value = cfg.port || 18766;
+  $('lang').value = cfg.lang || 'auto';
   const e = cfg.engine || {};
   $('env').innerHTML = [
-    '版本 <code>v' + cfg.version + '</code>',
-    '运行时 ' + (e.pythonFound ? '就绪' : '缺失'),
-    '模型 ' + (e.modelLabel || '未找到'),
-    '模式 ' + (isReview ? '复盘' : '实时'),
+    T('settings.env.version') + ' <code>v' + cfg.version + '</code>',
+    T('settings.env.runtime') + ' ' + (e.pythonFound ? T('settings.env.ready') : T('settings.env.missing')),
+    T('settings.env.model') + ' ' + (e.modelLabel || T('settings.env.notfound')),
+    T('settings.env.mode') + ' ' + (isReview ? T('settings.env.review') : T('settings.env.live')),
   ].join(' · ');
+  loadWallpaper();
 })();
 
 $('save').onclick = async () => {
@@ -127,6 +143,7 @@ $('save').onclick = async () => {
     mode: (picked && picked.value) || 'review',
     tileDark: $('dark').checked,
     port: parseInt($('port').value, 10) || 18766,
+    lang: $('lang').value,
   };
   const r = await (await fetch('/api/settings', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -139,16 +156,15 @@ $('save').onclick = async () => {
     }
     $('toast').classList.add('show');
     setTimeout(() => $('toast').classList.remove('show'), 1800);
-  }
-  else alert('保存失败：' + (r.error || '未知错误'));
+    if (r.lang) setTimeout(() => { location.href = '/setup'; }, 400);
+  } else alert(T('settings.save.failed', { msg: r.error || T('settings.common.unknown') }));
 };
+
 function showModeWarn(on) {
   const el = $('modeWarn');
   if (!el) return;
   el.style.display = on ? 'block' : 'none';
-  el.textContent = on
-    ? '⚠ 实时模式会在你切牌前给出答案，这属于局中辅助。第三方工具读取对局数据本身就可能违反《雀魂用户协议》，建议只在友人场使用，风险自负。'
-    : '';
+  el.textContent = on ? T('settings.mode.warn') : '';
 }
 document.querySelectorAll('input[name="mode"]').forEach((el) => {
   el.onchange = () => showModeWarn($('mRealtime').checked);
@@ -162,62 +178,61 @@ async function loadWallpaper() {
     const r = await (await fetch('/api/wallpaper', { cache: 'no-store' })).json();
     const c = r.current;
     $('wpNow').textContent = !c
-      ? '当前：无壁纸（面板纯色背景，固定高度 520px）'
+      ? T('settings.wp.none')
       : (c.source === 'user'
-        ? '当前：你上传的 ' + c.name + '（' + fmtMB(c.bytes) + '）'
-        : '当前：随包默认壁纸 ' + c.name + '（' + fmtMB(c.bytes) + '）');
-  } catch (e) { $('wpNow').textContent = '读取失败：' + e.message; }
+        ? T('settings.wp.user', { name: c.name, size: fmtMB(c.bytes) })
+        : T('settings.wp.default', { name: c.name, size: fmtMB(c.bytes) }));
+  } catch (e) { $('wpNow').textContent = T('settings.wp.readFail', { msg: e.message }); }
 }
-loadWallpaper();
 
 $('wpUpload').onclick = () => {
   const f = $('wpFile').files && $('wpFile').files[0];
-  if (!f) { $('wpMsg').textContent = '先选一个文件'; return; }
-  if (f.size > 64 * 1024 * 1024) { $('wpMsg').textContent = '文件超过 64 MB'; return; }
+  if (!f) { $('wpMsg').textContent = T('settings.wp.selectFirst'); return; }
+  if (f.size > 64 * 1024 * 1024) { $('wpMsg').textContent = T('settings.wp.tooBig'); return; }
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/wallpaper');
   xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
   xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) $('wpMsg').textContent = '上传中 ' + Math.round(e.loaded / e.total * 100) + '%';
+    if (e.lengthComputable) $('wpMsg').textContent = T('settings.wp.uploading', { pct: Math.round(e.loaded / e.total * 100) });
   };
   xhr.onload = () => {
     try {
       const r = JSON.parse(xhr.responseText);
-      $('wpMsg').textContent = r.ok ? '已上传，刷新游戏页生效' : '失败：' + r.error;
-    } catch (e) { $('wpMsg').textContent = '失败：' + xhr.status; }
+      $('wpMsg').textContent = r.ok ? T('settings.wp.uploaded') : T('settings.wp.failed', { msg: r.error });
+    } catch (e) { $('wpMsg').textContent = T('settings.wp.failed', { msg: xhr.status }); }
     loadWallpaper();
   };
-  xhr.onerror = () => { $('wpMsg').textContent = '上传失败（网络错误）'; };
+  xhr.onerror = () => { $('wpMsg').textContent = T('settings.wp.netErr'); };
   xhr.send(f);
 };
 
 $('wpReset').onclick = async () => {
   const r = await (await fetch('/api/wallpaper', { method: 'DELETE' })).json();
-  $('wpMsg').textContent = r.ok ? '已恢复默认，刷新游戏页生效' : '失败';
+  $('wpMsg').textContent = r.ok ? T('settings.wp.restored') : T('settings.wp.failed', { msg: r.error });
   loadWallpaper();
 };
 
 $('btnScript2').onclick = () => { window.open('/coach.user.js', '_blank'); };
 
 $('btnUpdate').onclick = async () => {
-  $('opsResult').textContent = '检查中…';
+  $('opsResult').textContent = T('settings.update.checking');
   try {
     const r = await (await fetch('/api/update', { cache: 'no-store' })).json();
-    if (!r.ok) { $('opsResult').textContent = '检查失败：' + (r.error || '未知错误'); return; }
+    if (!r.ok) { $('opsResult').textContent = T('settings.update.failed', { msg: r.error || T('settings.common.unknown') }); return; }
     $('opsResult').innerHTML = r.hasUpdate
-      ? '有新版本 <b>' + r.latest + '</b>（当前 ' + r.current + '）· <a href="' + r.url + '" target="_blank">打开下载页</a>'
-      : '已是最新版本（' + r.current + '）';
-  } catch (e) { $('opsResult').textContent = '检查失败：' + e.message; }
+      ? T('settings.update.hasUpdate', { latest: r.latest, current: r.current, url: r.url })
+      : T('settings.update.latest', { current: r.current });
+  } catch (e) { $('opsResult').textContent = T('settings.update.failed', { msg: e.message }); }
 };
 
 $('btnDiag').onclick = async () => {
-  $('opsResult').textContent = '打包中…';
+  $('opsResult').textContent = T('settings.diag.packing');
   try {
     const r = await (await fetch('/api/diag/export', { method: 'POST' })).json();
     $('opsResult').textContent = r.ok
-      ? '已导出：' + r.file + '（' + Math.round(r.bytes / 1024) + ' KB）'
-      : '导出失败：' + (r.error || '未知错误');
-  } catch (e) { $('opsResult').textContent = '导出失败：' + e.message; }
+      ? T('settings.diag.ok', { file: r.file, kb: Math.round(r.bytes / 1024) })
+      : T('settings.diag.failed', { msg: r.error || T('settings.common.unknown') });
+  } catch (e) { $('opsResult').textContent = T('settings.diag.failed', { msg: e.message }); }
 };
 </script>
 </body>

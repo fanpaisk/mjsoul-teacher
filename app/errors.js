@@ -9,6 +9,44 @@
  * 以后加功能只在这里加条目，不要在业务代码里拼中文句子。
  */
 
+const EN = {
+  PYTHON_MISSING: {
+    short: 'Engine cannot start: Python runtime not found',
+    why: 'runtime/python/python.exe is missing from the install dir, or engine/akagi/ is absent in a dev checkout.',
+    todo: 'Run the installer again to repair; for dev, unpack Akagi 3.7.x into engine/akagi/ or set pythonExe in config.json.',
+  },
+  BOT_MISSING: {
+    short: 'Engine cannot start: bot.py not found',
+    why: 'live/mjb/bot.py is missing — the package is incomplete.',
+    todo: 'Run the installer again (choose Repair).',
+  },
+  MODEL_LITE: {
+    short: 'Using the lite model (not S42)',
+    why: 'mortal_full.pth was not found, so the engine fell back to the lite model; decisions get noticeably worse.',
+    todo: 'Download the full model from Settings (~43 MB), or place it at live/mjb/mortal_full.pth.',
+  },
+  MODEL_NONE: {
+    short: 'Engine cannot start: no model weights',
+    why: 'Neither mortal_full.pth nor mortal.pth exists under live/mjb/.',
+    todo: 'Download the full model from Settings (~43 MB).',
+  },
+  PORT_IN_USE: {
+    short: 'Port already in use — coach did not start',
+    why: 'Another coach instance or program is bound to 127.0.0.1:18766.',
+    todo: 'Stop it from the tray menu, or kill leftover node.exe; you can also change the port in Settings.',
+  },
+  USERSCRIPT_STALE: {
+    short: 'Userscript is out of date',
+    why: 'Tampermonkey has an older script version; fields may be missing.',
+    todo: 'Open http://127.0.0.1:18766/coach.user.js and reinstall (Tampermonkey asks to update).',
+  },
+  ENGINE_CRASH: {
+    short: 'Engine exited unexpectedly',
+    why: 'Usually a failed model load, out of memory, or the runtime was blocked by antivirus.',
+    todo: 'Tray menu → Export diagnostics and send the log. The coach retries on the next hand.',
+  },
+};
+
 const CODES = {
   PYTHON_MISSING: {
     zh: '引擎无法启动：找不到 Python 运行时',
@@ -47,21 +85,23 @@ const CODES = {
   },
 };
 
-function get(code) {
-  return CODES[code] || { zh: code, why: '', todo: '' };
+function get(code, lang) {
+  const base = CODES[code] || { zh: code, why: '', todo: '' };
+  if (lang === 'en' && EN[code]) return { zh: EN[code].short, why: EN[code].why, todo: EN[code].todo };
+  return base;
 }
 
 /** 单行版（日志/面板用） */
-function line(code) {
-  const c = get(code);
+function line(code, lang) {
+  const c = get(code, lang);
   return `⚠ ${c.zh}${c.todo ? ' —— ' + c.todo : ''}`;
 }
 
 /** 引擎退出码 → 可读文案 */
-function engineExit(code, ctx) {
-  const c = get('ENGINE_CRASH');
+function engineExit(code, ctx, lang) {
+  const c = get('ENGINE_CRASH', lang);
   const extra = ctx && ctx.hadModel === false ? '（当时没找到模型：' + ctx.modelLabel + '）' : '';
   return `⚠ ${c.zh}（退出码 ${code}）${extra} —— ${c.todo}`;
 }
 
-module.exports = { CODES, get, line, engineExit };
+module.exports = { CODES, EN, get, line, engineExit };

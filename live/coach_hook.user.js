@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         雀魂实时教练钩子
 // @namespace    majsoul-coach
-// @version      1.1.0
+// @version      1.2.0
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
@@ -27,6 +27,17 @@
   // 自身版本：由 Tampermonkey 提供（服务端在 /coach.user.js 里注入 @version），
   // 随每帧带上，服务端版本不一致时会在面板上明确提示 —— 否则这种错配是完全静默的。
   const SCRIPT_VER = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || null;
+  // 页面一加载就报到（版本 + 语言）：向导靠它判断"脚本已生效"，不用等一手牌
+  (function hello() {
+    try {
+      if (typeof GM_xmlhttpRequest !== 'function') return;
+      GM_xmlhttpRequest({
+        method: 'POST', url: 'http://127.0.0.1:18766/hello', timeout: 5000,
+        headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify({ v: SCRIPT_VER, lang: (window.__I18N__ && window.__I18N__.lang) || '' }),
+      });
+    } catch (e) {}
+  })();
   const MAX = 262144; // 256KB：完整转发，绝不截断
   const toHex = (u8) => {
     let h = '';
@@ -60,7 +71,7 @@
         W.__liveHook.frames++;
         W.__liveHook.bytes += u8.length;
         if (u8.length > 8192) W.__liveHook.big++;
-        post({ dir, url: String((ws && ws.url) || ''), hex: toHex(u8), v: SCRIPT_VER });
+        post({ dir, url: String((ws && ws.url) || ''), hex: toHex(u8), v: SCRIPT_VER, lang: (window.__I18N__ && window.__I18N__.lang) || '' });
       }
     } catch (e) { W.__liveHook.errors++; }
   };
@@ -281,7 +292,7 @@
   const pHead = document.createElement('div');
   pHead.style.cssText = 'position:relative;z-index:1;background:linear-gradient(90deg,rgba(166,30,42,.55),rgba(90,50,110,.4));color:#f5e3d8;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;cursor:move;user-select:none;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 2px rgba(0,0,0,.6);';
   const pTitle = document.createElement('span');
-  pTitle.textContent = '🦋 往生堂 · 雀魂教练 v' + (SCRIPT_VER || '?');
+  pTitle.textContent = ((window.__I18N__ && window.__I18N__.dict && window.__I18N__.dict['panel.title']) || '🦋 往生堂 · 雀魂教练') + ' v' + (SCRIPT_VER || '?');
   const pBtn = document.createElement('span');
   pBtn.textContent = '—';
   pBtn.style.cssText = 'cursor:pointer;color:#8fa3c8;padding:0 6px;font-size:14px;';
@@ -605,6 +616,43 @@
     wrap.appendChild(svg);
     return wrap;
   }
+  // ---- 面板文案多语言：只做"显示层"替换 ----
+  // 解析仍然用中文（推荐：/ 你切了 等正则不动），所以逻辑零风险；
+  // 未知文案原样返回，字典缺失时等于没开。
+  const I18N_DICT = (window.__I18N__ && window.__I18N__.dict) || {};
+  const TR = (k, fb) => I18N_DICT[k] || fb;
+  const ACT_ZH = ['明杠', '暗杠', '加杠', '立直', '荣和', '自摸', '流局', '跳过', '拔北', '碰', '吃'];
+  function loc(s) {
+    if (!s || !Object.keys(I18N_DICT).length) return s;
+    s = String(s);
+    s = s.replace(/（Mortal 第 (\d+) 名 ([^）]+)）/g, (m, r, v) => {
+      let tpl = TR('panel.rank', '（Mortal 第 {{rank}} 名 {{value}}）');
+      return tpl.replace('{{rank}}', r).replace('{{value}}', v);
+    });
+    s = s.replace('本手复盘 · 推荐：', TR('panel.review', '本手复盘 · 推荐：'))
+      .replace('鸣牌后推荐：', TR('panel.call', '鸣牌后推荐：'))
+      .replace(/事后复盘（他人切 (.+?)）· 我可：/g, (m, tile) => {
+        let tpl = TR('panel.reviewOp', '事后复盘（他人切 {{tile}}）· 我可：');
+        return tpl.replace('{{tile}}', tile);
+      })
+      .replace('推荐：', TR('panel.recommend', '推荐：'))
+      .replace('我可：', TR('panel.canCall', '我可：'))
+      .replace('你切了', TR('panel.youDiscarded', '你切了'))
+      .replace('（不在推荐之列）', TR('panel.notInList', '（不在推荐之列）'));
+    for (const a of ACT_ZH) {
+      const v = TR('panel.act.' + a, a);
+      if (v !== a) s = s.split(a).join(v);
+    }
+    return s;
+  }
+  function localizeTree(root) {
+    if (!root || !Object.keys(I18N_DICT).length) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (w.nextNode()) nodes.push(w.currentNode);
+    for (const n of nodes) { const v = loc(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; }
+  }
+
   const fmtLine = (t) => {
     const div = document.createElement('div');
     // 建议行：候选渲染成牌面，首选项金色高亮
@@ -700,6 +748,7 @@
         (openGroup ? groupCenter() : pBody).appendChild(fmtLine(t));
       }
     }
+    localizeTree(pBody); // 显示层翻译：解析已完成，只改文字
     while (pBody.childNodes.length > 30) pBody.removeChild(pBody.firstChild);
     since = data.next;
     pBody.scrollTop = pBody.scrollHeight;

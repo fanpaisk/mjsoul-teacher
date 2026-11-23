@@ -39,6 +39,7 @@ try {
     model: require('../app/model'),
     update: require('../app/update'),
     diag: require('../app/diag'),
+    i18n: require('../app/i18n'),
   };
   APP.cfg = APP.config.applyCli(APP.config.load(), args);
 } catch (e) {
@@ -269,7 +270,10 @@ function T(t) { return !t ? '?' : HON2[t] || (t[0] === '0' ? '5' + t[1] + 'r' : 
 // 悬浮面板数据环（最近 300 条输出，/panel 接口按序号增量拉取）
 const PANEL = { idx: 0, buf: [] };
 // 运行统计：设置向导判断"页面到底接没接上"，以及诊断包用
-const STATS = { frames: 0, bigFrames: 0, lastFrameAt: null, denied: 0, dropped: 0, rateWin: 0, rateN: 0, scriptVersion: null, verWarned: false, bgHits: 0, bgLast: null };
+const STATS = { frames: 0, bigFrames: 0, lastFrameAt: null, denied: 0, dropped: 0, rateWin: 0, rateN: 0, scriptVersion: null, verWarned: false, bgHits: 0, bgLast: null, scriptLang: null, scriptSeenAt: null };
+// 错误文案的语言：auto 视为中文（日志给开发者看，不跟浏览器走）
+const errLang = () => (APP && APP.i18n ? (APP.i18n.normalize(CFG && CFG.lang) || 'zh-CN') : 'zh-CN');
+
 function out(line) {
   fs.appendFileSync(OUT_FILE, line + '\n');
   console.log(line);
@@ -291,7 +295,7 @@ function mortalStart() {
   // 直接给一条可操作的中文提示并停用本场（下局用户修好后自动恢复）。
   if (!MORTAL_PY) {
     MORTAL.gaveUp = true;
-    out(APP ? APP.errors.line('PYTHON_MISSING') : '⚠ 引擎无法启动：找不到 Python 运行时（见 docs/PLAN-packaging.md）');
+    out(APP ? APP.errors.line('PYTHON_MISSING', errLang()) : '⚠ 引擎无法启动：找不到 Python 运行时（见 docs/PLAN-packaging.md）');
     return false;
   }
   MORTAL.restarts++;
@@ -318,7 +322,7 @@ function mortalStart() {
     for (const cb of MORTAL.pending.splice(0)) cb(null);
     if (S.inGame) {
       const m = APP ? APP.paths.model() : null;
-      out(APP ? APP.errors.engineExit(c, { hadModel: !!(m && m.file), modelLabel: m && m.label })
+      out(APP ? APP.errors.engineExit(c, { hadModel: !!(m && m.file), modelLabel: m && m.label }, errLang())
         : '⚠ Mortal 引擎退出（code ' + c + '），下次出牌自动重启…');
     }
   });
@@ -1229,6 +1233,12 @@ if (TEST_ACTIONS) {
             let body = fs.readFileSync(src, 'utf8');
             const ver = APP ? APP.version.version : null;
             if (ver) body = body.replace(/^(\/\/\s*@version\s+).*$/m, '$1' + ver);
+            // 面板文案的多语言字典：和 @version 一样在服务端注入
+            try {
+              const uiLang = APP.i18n.normalize(CFG && CFG.lang) || 'zh-CN';
+              const inject = '\nwindow.__I18N__ = ' + JSON.stringify({ lang: uiLang, dict: APP.i18n.dict(uiLang) }) + ';\n';
+              body = body.replace('// ==/UserScript==', '// ==/UserScript==' + inject);
+            } catch (e) { obs('i18n inject failed: ' + (e && e.message)); }
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
             res.setHeader('Cache-Control', 'no-store');
             res.end(body);
@@ -1236,6 +1246,28 @@ if (TEST_ACTIONS) {
             res.statusCode = 500;
             res.end('userscript not found');
           }
+          return;
+        }
+
+        // ---------- 多语言 ----------
+        if (req.method === 'GET' && req.url.startsWith('/api/i18n')) {
+          const q = req.url.indexOf('?') >= 0 ? new URLSearchParams(req.url.slice(req.url.indexOf('?'))) : new URLSearchParams();
+          // auto / 未指定：先看配置里的固定语言，再看浏览器 Accept-Language，最后中文
+          const fromHeader = APP.i18n.normalize(String(req.headers['accept-language'] || '').split(',')[0]);
+          const want = APP.i18n.normalize(q.get('lang')) || APP.i18n.normalize(CFG.lang) || fromHeader || APP.i18n.SOURCE;
+          const lang = APP.i18n.available().includes(want) ? want : APP.i18n.SOURCE;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify({ lang, dict: APP.i18n.dict(lang) }));
+          return;
+        }
+        if (req.method === 'GET' && req.url === '/i18n-client.js') {
+          try {
+            const js = fs.readFileSync(path.join(APP.paths.webDir(), 'i18n-client.js'), 'utf8');
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.end(js);
+          } catch (e) { res.statusCode = 404; res.end(''); }
           return;
         }
 
@@ -1267,6 +1299,7 @@ if (TEST_ACTIONS) {
           }
           const r = APP.config.save(chk.value);
           // 立刻生效：提醒时机是服务端行为，不需要重启（以前要重启，用户会以为"保存没生效"）
+          if (r && r.ok && chk.value && typeof chk.value.lang === 'string' && CFG) CFG.lang = chk.value.lang;
           if (r && r.ok && chk.value && typeof chk.value.mode === 'string') {
             S.reviewMode = chk.value.mode === 'review';
             obs('提醒时机已切换为：' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
@@ -1411,6 +1444,7 @@ if (TEST_ACTIONS) {
             version: APP ? APP.version.version : null,
             product: APP ? APP.version.productName : null,
             mode: S.reviewMode ? 'review' : 'realtime',
+            lang: (CFG && CFG.lang) || 'auto',
             review: !!S.reviewMode, tileDark: !!S.tileDark,
             port: CFG ? CFG.port : 18766,
             frames: STATS.frames,
@@ -1420,6 +1454,8 @@ if (TEST_ACTIONS) {
             bgHits: STATS.bgHits,
             bgLast: STATS.bgLast,
             scriptVersion: STATS.scriptVersion || null,
+            scriptLang: STATS.scriptLang || null,
+            uiLang: (APP && APP.i18n ? (APP.i18n.normalize(CFG && CFG.lang) || 'zh-CN') : null),
             engine: diag ? {
               python: diag.python, pythonFound: diag.pythonFound,
               model: diag.model, modelLabel: diag.modelLabel, modelSizeMB: diag.modelSizeMB,
@@ -1550,6 +1586,19 @@ if (TEST_ACTIONS) {
           } catch (e) { res.statusCode = 500; res.end('err'); }
           return;
         }
+        // 脚本加载即报到：版本 + 当前语言。不依赖 WS 帧，所以向导里的"已生效"能秒级更新。
+        if (req.url === '/hello' && req.method === 'POST') {
+          try {
+            const h = JSON.parse(body || '{}');
+            if (h.v) STATS.scriptVersion = String(h.v);
+            if (h.lang) STATS.scriptLang = String(h.lang);
+            STATS.scriptSeenAt = Date.now();
+          } catch (e) {}
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end('{"ok":true}');
+          return;
+        }
+
         if (req.url === '/announce') {
           const f = JSON.parse(body);
           if (f && f.text) out(String(f.text));
@@ -1647,9 +1696,10 @@ if (TEST_ACTIONS) {
           STATS.bigFrames += (f.hex && f.hex.length > 32000) ? 1 : 0;
           // 版本握手：脚本版本与服务端不一致时说一句（这类错配否则完全静默，是最难查的一类）
           if (f.v) STATS.scriptVersion = f.v;
+          if (f.lang) STATS.scriptLang = f.lang;
           if (APP && f.v && f.v !== APP.version.version && !STATS.verWarned) {
             STATS.verWarned = true;
-            out(APP.errors.line('USERSCRIPT_STALE') + `（脚本 v${f.v} / 服务端 v${APP.version.version}）`);
+            out(APP.errors.line('USERSCRIPT_STALE', errLang()) + `（脚本 v${f.v} / 服务端 v${APP.version.version}）`);
           }
           // 脚本更新后（或页面重新加载后）版本对齐：解除告警并明确说一句，
           // 否则那条"版本过旧"会永远挂在面板里，看起来像没生效。
@@ -1669,7 +1719,7 @@ if (TEST_ACTIONS) {
   });
   server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
-      if (APP) { console.log(APP.errors.line('PORT_IN_USE')); }
+      if (APP) { console.log(APP.errors.line('PORT_IN_USE', errLang())); }
       else { console.log('✓ 教练服务端已经在运行了，无需重复启动。（本窗口可以直接关闭）'); }
       process.exit(0);
     }
@@ -1680,20 +1730,21 @@ if (TEST_ACTIONS) {
     const ver = APP ? APP.version.display() : '雀魂实时教练';
     const diag = APP ? APP.paths.diagnostics(CFG) : null;
     out('============================================');
-    out('  ' + ver + ' 已启动（中继 127.0.0.1:' + PORT + '）');
-    out('  决策引擎: Mortal 本地神经网络' + (diag ? ' · ' + diag.modelLabel : ''));
-    out('  提醒时机: ' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
+    const T = (k, v) => APP.i18n.t(errLang(), k, v);
+    out('  ' + T('boot.started', { product: T('boot.product'), ver: APP && APP.version ? APP.version.version : '', port: PORT }));
+    out('  ' + T('boot.engine', { model: diag ? ' · ' + String(diag.modelLabel).replace('（完整版）', T('boot.modelFull')) : '' }));
+    out('  ' + T('boot.timing', { mode: S.reviewMode ? T('boot.timing.review') : T('boot.timing.live') }));
     if (!S.reviewMode) {
-      out('  ⚠ 实时模式：会在你切牌前给出建议，属于局中辅助。');
-      out('    第三方工具读取对局数据存在协议风险，建议只在友人场使用，风险自负。');
+      out('  ' + T('boot.liveWarn'));
+      out('    ' + T('boot.liveRisk'));
     }
-    out('  实时输出: ' + OUT_FILE);
+    out('  ' + T('boot.outFile', { file: OUT_FILE }));
     if (diag) {
-      if (!diag.pythonFound) out(APP.errors.line('PYTHON_MISSING'));
-      if (diag.model === 'none') out(APP.errors.line('MODEL_NONE'));
-      else if (diag.model === 'lite') out(APP.errors.line('MODEL_LITE'));
+      if (!diag.pythonFound) out(APP.errors.line('PYTHON_MISSING', errLang()));
+      if (diag.model === 'none') out(APP.errors.line('MODEL_NONE', errLang()));
+      else if (diag.model === 'lite') out(APP.errors.line('MODEL_LITE', errLang()));
     }
-    out('  页面脚本: http://127.0.0.1:' + PORT + '/coach.user.js');
+    out('  ' + T('boot.script', { url: 'http://127.0.0.1:' + PORT + '/coach.user.js' }));
     out('============================================');
   });
 }

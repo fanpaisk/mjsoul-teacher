@@ -37,6 +37,7 @@ const DEFAULTS = {  port: 18766,
   pythonExe: null,         // null = 自动探测（app/paths.js）
   dataDir: null,           // null = 项目根 / 安装版由启动器设置
   logLevel: 'info',
+  lang: 'auto',             // 'auto' | 'zh-CN' | 'en' | 'ja' | 'ko'
   checkUpdates: true,
   panel: { showBadge: true },
 };
@@ -153,6 +154,10 @@ function sanitize(patch, rootDir) {
     } else if (patch.mode === null || patch.mode === 'review' || patch.mode === 'realtime') {
       out.mode = patch.mode;
     } else bad.push('mode');
+  }
+  if ('lang' in patch) {
+    if (['auto', 'zh-CN', 'en', 'ja', 'ko'].includes(patch.lang)) out.lang = patch.lang;
+    else bad.push('lang');
   }
   if ('tileDark' in patch) {
     if (typeof patch.tileDark === 'boolean') out.tileDark = patch.tileDark; else bad.push('tileDark');
