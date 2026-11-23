@@ -127,6 +127,7 @@ let cfg = null;
   $('dark').checked = !!cfg.tileDark;
   $('port').value = cfg.port || 18766;
   $('lang').value = cfg.lang || 'auto';
+  window.__origLang = $('lang').value; // 用来判断"这次是不是真的换了语言"
   const e = cfg.engine || {};
   $('env').innerHTML = [
     T('settings.env.version') + ' <code>v' + cfg.version + '</code>',
@@ -156,7 +157,7 @@ $('save').onclick = async () => {
     }
     $('toast').classList.add('show');
     setTimeout(() => $('toast').classList.remove('show'), 1800);
-    if (r.lang) setTimeout(() => { location.href = '/setup'; }, 400);
+    if (r.lang && $('lang').value !== window.__origLang) setTimeout(() => { location.href = '/setup'; }, 400);
   } else alert(T('settings.save.failed', { msg: r.error || T('settings.common.unknown') }));
 };
 

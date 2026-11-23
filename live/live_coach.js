@@ -1299,7 +1299,10 @@ if (TEST_ACTIONS) {
           }
           const r = APP.config.save(chk.value);
           // 立刻生效：提醒时机是服务端行为，不需要重启（以前要重启，用户会以为"保存没生效"）
-          if (r && r.ok && chk.value && typeof chk.value.lang === 'string' && CFG) CFG.lang = chk.value.lang;
+          if (r && r.ok && chk.value && typeof chk.value.lang === 'string' && CFG) {
+            CFG.lang = chk.value.lang;
+            r.lang = CFG.lang; // 回给页面：切了语言就跳向导，让用户看到"需要重装脚本"
+          }
           if (r && r.ok && chk.value && typeof chk.value.mode === 'string') {
             S.reviewMode = chk.value.mode === 'review';
             obs('提醒时机已切换为：' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
