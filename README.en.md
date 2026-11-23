@@ -6,6 +6,9 @@
 
 **有什么问题和修改建议都可以开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)哦**
 
+**Available in Chinese / English / Japanese / Korean** — switch it in Settings
+
+
 **Let's be honest: this is cheating.**
 
 It reads your game data and tells you the answer before you commit to a discard. With **live mode** on, it suggests a tile the moment you draw. That's cheating. I'm not going to pretend otherwise.
