@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
-    <img alt="下载" src="https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD-v1.1.0-2ea44f?style=for-the-badge">
+    <img alt="下载" src="https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD-v1.2.0-2ea44f?style=for-the-badge">
   </a>
 </p>
 
