@@ -17,20 +17,22 @@ const os = require('os');
 const ROOT = path.join(__dirname, '..');
 
 /**
- * 公共版边界（DECISIONS D5 / D44）：只允许**复盘模式**。
+ * 模式开关（DECISIONS D52，取代 D5/D44 的"锁死复盘"）。
  *
- * 实时模式（摸牌瞬间就给建议）太接近代打，而这个工具的定位是"事后复盘、提升牌效"。
- * 功能代码保留（以后要放开只改这一个开关再打包），但**用户没有办法打开它**：
- *   · 设置页只有一行只读的"复盘模式（固定）"
- *   · POST /api/settings 传 realtime 会被拒（400）
- *   · 命令行 --realtime 被忽略，config.json 里的 mode 也被强制覆盖
+ * 现在两种模式都可用，由用户自己选：
+ *   · 复盘模式（默认）：切完牌才提醒，先做决策再看评价
+ *   · 实时模式（风险自负）：摸牌就给建议，属于局中辅助
+ *
+ * 锁死模式的价值（D5/D44）是"口径干净"，但代价是把一半需求挡在门外。
+ * 现在改成"默认复盘 + 可选实时 + 显著免责"，选择权交给用户。
+ * 若要把实时模式彻底关掉，把这里改回 true 重新打包即可（三层强制逻辑都还在）。
  */
-const REVIEW_ONLY = true;
+const REVIEW_ONLY = false;
 
 const DEFAULTS = {  port: 18766,
-  // null = 不表态，跟随旧行为（live/coach_settings.json 的 reviewMode，缺省=实时）。
-  // 公共版安装器会显式写入 'review'；这里给 null 是为了**不悄悄改变老用户的行为**。
-  mode: null,              // 'review' = 切完才提醒 | 'realtime' = 摸牌即提醒
+  // 默认复盘：先做决策、再看评价，这是推荐用法。
+  // 想用实时模式的用户自己在设置页切换（风险自负，见 D52）。
+  mode: 'review',              // 'review' = 切完才提醒 | 'realtime' = 摸牌即提醒
   tileDark: false,         // 默认黑牌（直播防偷看）
   pythonExe: null,         // null = 自动探测（app/paths.js）
   dataDir: null,           // null = 项目根 / 安装版由启动器设置

@@ -48,6 +48,11 @@ if ($occupied) {
   $Base = 'http://127.0.0.1:18799'
   Write-Host '  18766 被占用，改用 18799 跑冒烟' -ForegroundColor Yellow
 }
+# 冒烟必须用干净的配置目录：否则会读到用户自己的 config.json（用户切过实时模式时，默认模式断言会假红）
+$smokeAppData = Join-Path $env:TEMP ('coach-smoke-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+New-Item -ItemType Directory -Force -Path $smokeAppData | Out-Null
+$oldAppData = $env:APPDATA
+$env:APPDATA = $smokeAppData
 $proc = Start-Process $node -ArgumentList 'live/live_coach.js' -WorkingDirectory $Dir -PassThru -WindowStyle Hidden
 $up = $false
 for ($i = 0; $i -lt 30; $i++) {
@@ -60,7 +65,7 @@ if (-not $up) { try { Stop-Process -Id $proc.Id -Force } catch {}; exit 1 }
 try {
   $cfg = (Invoke-WebRequest "$Base/config" -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json
   Check ($cfg.version -eq $ver) '/config 版本一致' "包 $ver / 服务端 $($cfg.version)"
-  Check ($cfg.mode -eq 'review') '默认模式 = review（公共版边界）' "实际 $($cfg.mode)"
+  Check ($cfg.mode -eq 'review') '默认模式 = review（默认复盘）' "实际 $($cfg.mode)"
   Check ($cfg.engine.model -eq 'full') '模型 = S42 完整版' "实际 $($cfg.engine.model)"
 
   Write-Host "`n[3] 页面与接口" -ForegroundColor Cyan
@@ -110,6 +115,8 @@ try {
 finally {
   try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
   Start-Sleep -Milliseconds 800
+  if ($oldAppData -ne $null) { $env:APPDATA = $oldAppData }
+  try { Remove-Item -Recurse -Force $smokeAppData -ErrorAction SilentlyContinue } catch {}
 }
 
 Write-Host "`n[7] 退出后不留监听" -ForegroundColor Cyan

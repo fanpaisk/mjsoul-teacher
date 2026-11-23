@@ -669,7 +669,7 @@ function handleAction(name, d) {
         S.hands[S.seat] = S.myTiles.slice();
         if (d.dora) S.seen[mj.tileId(d.dora)]++;
         out(`【${S.kyokuLabel}】宝牌 ${T(d.dora) || '?'}｜点数 ${JSON.stringify(d.scores || [])}`);
-        if (drawn) { S.junme = 1; S.lastDrawn = drawn; requestAdvice(drawn, 'draw'); }
+        if (drawn) { S.junme = 1; S.lastDrawn = drawn; if (!S.reviewMode) requestAdvice(drawn, 'draw'); }
       } else {
         // 非庄家：扣起，等首条个性化摸牌揭晓座位
         S.pendingNewRound = d;
@@ -682,7 +682,7 @@ function handleAction(name, d) {
     S.hands[S.seat] = S.myTiles.slice();
     if (d.dora) S.seen[mj.tileId(d.dora)]++;
     out(`【${S.kyokuLabel}】宝牌 ${T(d.dora) || '?'}｜点数 ${JSON.stringify(d.scores || [])}`);
-    if (drawn) { S.junme = 1; S.lastDrawn = drawn; requestAdvice(drawn, 'draw'); }
+    if (drawn) { S.junme = 1; S.lastDrawn = drawn; if (!S.reviewMode) requestAdvice(drawn, 'draw'); }
     return;
   }
 
@@ -1266,6 +1266,12 @@ if (TEST_ACTIONS) {
             return;
           }
           const r = APP.config.save(chk.value);
+          // 立刻生效：提醒时机是服务端行为，不需要重启（以前要重启，用户会以为"保存没生效"）
+          if (r && r.ok && chk.value && typeof chk.value.mode === 'string') {
+            S.reviewMode = chk.value.mode === 'review';
+            obs('提醒时机已切换为：' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
+            r.mode = S.reviewMode ? 'review' : 'realtime';
+          }
           res.end(JSON.stringify(r));
           return;
         }
@@ -1676,6 +1682,11 @@ if (TEST_ACTIONS) {
     out('============================================');
     out('  ' + ver + ' 已启动（中继 127.0.0.1:' + PORT + '）');
     out('  决策引擎: Mortal 本地神经网络' + (diag ? ' · ' + diag.modelLabel : ''));
+    out('  提醒时机: ' + (S.reviewMode ? '复盘（切完牌才提醒）' : '实时（摸牌即提醒）'));
+    if (!S.reviewMode) {
+      out('  ⚠ 实时模式：会在你切牌前给出建议，属于局中辅助。');
+      out('    第三方工具读取对局数据存在协议风险，建议只在友人场使用，风险自负。');
+    }
     out('  实时输出: ' + OUT_FILE);
     if (diag) {
       if (!diag.pythonFound) out(APP.errors.line('PYTHON_MISSING'));
