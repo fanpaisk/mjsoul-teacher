@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
-    <img alt="下载" src="https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD-v1.2.0-2ea44f?style=for-the-badge">
+    <img alt="下载" src="https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD-v1.1.0-2ea44f?style=for-the-badge">
   </a>
 </p>
 
@@ -76,17 +76,6 @@
 3. 托盘右键 → 向导，点四下：环境自检 → 模型（自带）→ 装脚本 → 进游戏
 
 卡住就开 [Issue](https://github.com/fanpaisk/mjsoul-teacher/issues)，或设置页导出诊断包。
-
-## 装完怎么启动
-
-安装程序最后一步默认勾了「立即启动」，完成后托盘出现圆形图标（Windows 11 可能收在 `^` 里）。
-
-**之后每次用**：
-
-1. **开始菜单 → 雀魂教练**（安装时也能勾桌面快捷方式）
-2. 托盘图标右键 → 启动 / 停止教练、设置向导、设置、查看日志
-
-> 教练**不会开机自启**（设计如此），每次开机后要自己点一下开始菜单里的图标。
 
 ## 最后，风险自负
 
