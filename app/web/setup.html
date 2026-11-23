@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>雀魂教练 · 首次设置</title>
+<style>
+  :root{--bg:#14161b;--card:#1c1f26;--line:#2b303b;--fg:#e8e6e3;--dim:#9aa0ab;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24;--acc:#e0a96d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:32px 20px 64px}
+  h1{font-size:20px;margin:0 0 4px;font-weight:600}
+  .sub{color:var(--dim);margin-bottom:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 0}
+  .row .name{flex:1}
+  .badge{font-size:12px;padding:1px 8px;border-radius:20px;border:1px solid var(--line)}
+  .ok{color:var(--ok);border-color:#25603c}
+  .bad{color:var(--bad);border-color:#61272b}
+  .warn{color:var(--warn);border-color:#5c4a1c}
+  .dim{color:var(--dim)}
+  code{background:#111318;padding:1px 5px;border-radius:4px;font-size:12px;color:#c8b7a4}
+  button{background:var(--acc);color:#1a1208;border:0;border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer;font-weight:600}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:400}
+  a{color:var(--acc)}
+  .bar{height:6px;background:#111318;border-radius:4px;overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .3s}
+  .foot{color:var(--dim);font-size:12px;margin-top:22px}
+  .step{color:var(--acc);font-weight:600;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>雀魂教练 · 首次设置</h1>
+  <div class="sub" id="ver">正在读取状态…</div>
+
+  <div class="card">
+    <div class="row"><span class="step">1</span><span class="name">运行环境</span><span class="badge" id="bEnv">检查中</span></div>
+    <div class="row dim" id="envDetail" style="font-size:12px"></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="step">2</span><span class="name">决策模型（Mortal-S42，约 42 MB）</span><span class="badge" id="bModel">检查中</span></div>
+    <div class="row dim" id="modelDetail" style="font-size:12px"></div>
+    <div class="row" id="modelActions" style="display:none">
+      <button id="btnDownload">下载模型</button>
+      <span class="dim" id="dlHint"></span>
+    </div>
+    <div class="bar" id="barWrap" style="display:none"><i id="bar"></i></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="step">3</span><span class="name">浏览器脚本（Tampermonkey）</span><span class="badge" id="bScript">待安装</span></div>
+    <div class="row dim" id="scriptHint" style="font-size:12px">没装 Tampermonkey 会先跳到安装页；已装则直接弹"安装此脚本"。</div>
+    <div class="row">
+      <button id="btnScript">安装 / 更新脚本</button>
+      <button class="ghost" id="btnTamper">先装 Tampermonkey</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="step">4</span><span class="name">连接游戏</span><span class="badge" id="bGame">等待游戏页面</span></div>
+    <div class="row dim" id="gameDetail" style="font-size:12px">打开雀魂并进入对局，页面左下角出现 <code>教练 N帧</code> 即接通。</div>
+    <div class="row"><button id="btnGame">打开雀魂</button>
+      <button class="ghost" id="btnSettings">更多设置</button></div>
+  </div>
+
+  <div class="foot">
+    服务端版本 <span id="fv">-</span> · 端口 <span id="fp">-</span> ·
+    本页只在本机 127.0.0.1 上提供服务，不联网（除了你主动点的模型下载）。
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cfg = null, lastFrames = 0;
+
+function badge(el, text, kind) {
+  el.textContent = text;
+  el.className = 'badge ' + (kind || '');
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/config', { cache: 'no-store' });
+    cfg = await r.json();
+  } catch (e) {
+    $('ver').textContent = '服务端没有响应，请确认教练已启动。';
+    return;
+  }
+  $('ver').textContent = (cfg.product || '雀魂教练') + ' v' + cfg.version;
+  $('fv').textContent = cfg.version;
+  $('fp').textContent = cfg.port;
+
+  const eng = cfg.engine || {};
+  if (eng.pythonFound && eng.vcRuntime !== false) { badge($('bEnv'), '就绪', 'ok'); $('envDetail').textContent = 'Python 运行时已找到 · VC++ 运行库正常'; }
+  else if (!eng.pythonFound) { badge($('bEnv'), '缺少运行时', 'bad'); $('envDetail').textContent = '找不到 Python 运行时，引擎无法启动（安装版请重新运行安装程序）'; }
+  else { badge($('bEnv'), '缺 VC++ 运行库', 'bad'); $('envDetail').textContent = '请安装「Microsoft Visual C++ 2015-2022 运行库（x64）」后重启教练'; }
+
+  const m = eng.model;
+  if (m === 'full') { badge($('bModel'), '已就绪（S42）', 'ok'); $('modelDetail').textContent = (eng.modelLabel || '') + ' · ' + (eng.modelSizeMB || 0) + ' MB'; $('modelActions').style.display = 'none'; }
+  else if (m === 'lite') { badge($('bModel'), '降级：lite', 'warn'); $('modelDetail').textContent = '当前是精简模型，建议下载完整版'; $('modelActions').style.display = 'flex'; }
+  else { badge($('bModel'), '未下载', 'bad'); $('modelDetail').textContent = '没有模型权重，引擎无法给出建议'; $('modelActions').style.display = 'flex'; }
+
+  // 帧数：服务端累计收到的帧数。>0 就说明"页面 → 本地"这条链路真的通了，
+  // 也说明第 3 步的脚本已经装上并生效了（不再是一个永远"待安装"的死标签）
+  const frames = cfg.frames || 0;
+  if (frames > 0) {
+    const ago = cfg.lastFrameAt ? Math.round((Date.now() - cfg.lastFrameAt) / 1000) : null;
+    badge($('bGame'), '已接通（' + frames + ' 帧）', 'ok');
+    $('gameDetail').textContent = ago !== null && ago < 30 ? '最后收到帧：刚刚' : '最后收到帧：' + (ago === null ? '—' : ago + ' 秒前');
+    badge($('bScript'), '已生效', 'ok');
+  } else {
+    badge($('bGame'), '等待游戏页面', '');
+    $('gameDetail').textContent = '打开雀魂并进入对局，页面左下角出现 教练 N帧 即接通。';
+    badge($('bScript'), '待安装', '');
+  }
+}
+
+async function pollDownload() {
+  const s = await (await fetch('/api/model/status', { cache: 'no-store' })).json();
+  if (s.state === 'downloading' || s.state === 'verifying') {
+    $('barWrap').style.display = 'block';
+    const pct = s.percent != null ? s.percent : 0;
+    $('bar').style.width = pct + '%';
+    $('dlHint').textContent = s.state === 'verifying' ? '校验中…'
+      : (s.percent != null ? pct + '%' : (s.received / 1048576).toFixed(1) + ' MB');
+    $('btnDownload').disabled = true;
+    setTimeout(pollDownload, 500);
+  } else if (s.state === 'done') {
+    $('bar').style.width = '100%';
+    $('dlHint').textContent = '下载完成，请重启教练以加载新模型';
+    $('btnDownload').disabled = false;
+    setTimeout(refresh, 500);
+  } else if (s.state === 'error') {
+    $('dlHint').textContent = '失败：' + (s.error || '未知错误');
+    $('btnDownload').disabled = false;
+  }
+}
+
+$('btnDownload').onclick = async () => {
+  const r = await (await fetch('/api/model/download', { method: 'POST' })).json();
+  if (!r.started) $('dlHint').textContent = r.reason || '无法开始下载';
+  pollDownload();
+};
+$('btnScript').onclick = () => {
+  // 新标签打开：Tampermonkey 会拦截 .user.js 并弹安装页；
+  // 没装 Tampermonkey 的话浏览器只会显示一串代码 —— 下面这句就是给那种情况看的
+  window.open('/coach.user.js', '_blank');
+  $('scriptHint').innerHTML = '如果新标签里只是一串代码而没有"安装"按钮，说明 <b>Tampermonkey 没装或没生效</b>，先点右边的"先装 Tampermonkey"。';
+};
+$('btnTamper').onclick = () => { window.open('https://www.tampermonkey.net/', '_blank'); };
+$('btnGame').onclick = () => { window.open('https://game.maj-soul.com/1/', '_blank'); };
+$('btnSettings').onclick = () => { location.href = '/settings'; };
+
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

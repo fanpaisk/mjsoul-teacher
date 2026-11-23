@@ -1,0 +1,9 @@
+{"name":"ActionNewRound","data":{"chang":0,"ju":1,"ben":0,"tiles":["1m","2m","3m","5m","5m","9m","1p","2p","3p","5s","6s","7s","E"],"dora":"9s","scores":[25000,25000,25000,25000],"liqibang":0}}
+{"name":"ActionDealTile","data":{"seat":1}}
+{"name":"ActionDiscardTile","data":{"seat":1,"tile":"2s"}}
+{"name":"ActionDealTile","data":{"seat":0,"tile":"5m"}}
+{"name":"ActionDiscardTile","data":{"seat":0,"tile":"9m"}}
+{"name":"ActionDealTile","data":{"seat":1}}
+{"name":"ActionDiscardTile","data":{"seat":1,"tile":"5m","operation":{"operation_list":[{"type":2,"combination":["5m"]}]}}}
+{"name":"ActionChiPengGang","data":{"seat":0,"type":1,"tiles":["5m","5m","5m"],"froms":[1,0,0]}}
+{"name":"ActionDiscardTile","data":{"seat":0,"tile":"E"}}
