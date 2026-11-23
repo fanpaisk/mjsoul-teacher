@@ -34,8 +34,13 @@
 
 ![デモ](docs/images/demo.gif)
 
-## インストール
+## 対応サーバー
 
+検証済み：国際中文服（`game.maj-soul.com`）、日本語服（`game.mahjongsoul.com`）。
+
+英語服（`mahjongsoul.game.yo-star.com`）はスクリプトの対象に追加済みですが、**実機検証はまだ**です。フレーム数が増えない場合は Issue で知らせてください。
+
+/## インストール\n/
 1. [ダウンロード](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.2.0.exe`
 2. ダブルクリック（未署名。SmartScreen は「詳細情報 → 実行」）
 3. トレイアイコン → ウィザード（4クリック）

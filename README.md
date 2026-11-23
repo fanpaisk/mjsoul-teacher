@@ -57,8 +57,13 @@
 
 ![托盘程序图标](docs/images/demo-clip.gif)
 
-## 安装
+## 支持哪些服务器
 
+已验证：国际中文服（`game.maj-soul.com`）、日服（`game.mahjongsoul.com`）。
+
+英文服（`mahjongsoul.game.yo-star.com`）脚本已覆盖，**但还没有实机验证**。如果那边面板帧数不涨，欢迎开 Issue——这算有用信息，不算找茬。
+
+/## 安装\n/
 1. [下载](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
 2. 双击（没签名，SmartScreen 点「更多信息 → 仍要运行」）
 3. 托盘右键 → 向导，点四下：环境自检 → 模型（自带）→ 装脚本 → 进游戏

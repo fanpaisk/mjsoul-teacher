@@ -32,8 +32,13 @@ Compared with auto-play tools (e.g. MahjongCopilot):
 
 That's not "safe" — it just means three fewer things that can break on your machine.
 
-## Install
+## Which servers
 
+Tested: the Global Chinese client (`game.maj-soul.com`) and the Japanese client (`game.mahjongsoul.com`).
+
+The English client (`mahjongsoul.game.yo-star.com`) is matched by the userscript but **has not been tested end to end**. If the panel shows no frames there, please open an issue — that is useful information, not a complaint.
+
+/## Install\n/
 1. [Download](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.1.0.exe`
 2. Double-click (unsigned; SmartScreen → More info → Run anyway)
 3. Tray icon → wizard (4 clicks)

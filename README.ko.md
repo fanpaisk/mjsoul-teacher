@@ -34,8 +34,13 @@
 
 ![데모](docs/images/demo.gif)
 
-## 설치
+## 지원 서버
 
+검증됨: 국제 중국어 서버(`game.maj-soul.com`), 일본어 서버(`game.mahjongsoul.com`).
+
+영어 서버(`mahjongsoul.game.yo-star.com`)는 스크립트에 포함했지만 **실기 검증은 아직**입니다. 프레임이 늘지 않으면 Issue 로 알려 주세요.
+
+/## 설치\n/
 1. [다운로드](https://github.com/fanpaisk/mjsoul-teacher/releases/latest) `MahjongSoulCoach-Setup-1.2.0.exe`
 2. 더블클릭 (서명 없음. SmartScreen 은 「추가 정보 → 실행」)
 3. 트레이 아이콘 → 마법사 (4번 클릭)
