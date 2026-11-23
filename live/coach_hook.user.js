@@ -5,6 +5,7 @@
 // @description  捕获雀魂 WebSocket 帧转发到本地教练（127.0.0.1:18766），并在游戏内显示实时建议悬浮面板。
 // @match        https://game.maj-soul.com/*
 // @match        https://game.mahjongsoul.com/*
+// @match        https://mahjongsoul.game.yo-star.com/*
 // @match        https://www.majsoul.com/*
 // @match        https://majsoul.com/*
 // @run-at       document-start

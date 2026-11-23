@@ -151,7 +151,14 @@ $('btnScript').onclick = () => {
   $('scriptHint').textContent = T('setup.script.fallback');
 };
 $('btnTamper').onclick = () => { window.open('https://www.tampermonkey.net/', '_blank'); };
-$('btnGame').onclick = () => { window.open('https://game.maj-soul.com/1/', '_blank'); };
+// 按界面语言开对应服务器：日文→日服，英/韩→英文服（Global），其余→国际中文服
+$('btnGame').onclick = () => {
+  const l = (window.I18N && I18N.lang) || 'zh-CN';
+  const url = l === 'ja' ? 'https://game.mahjongsoul.com/'
+    : (l === 'en' || l === 'ko') ? 'https://mahjongsoul.game.yo-star.com/'
+    : 'https://game.maj-soul.com/1/';
+  window.open(url, '_blank');
+};
 $('btnSettings').onclick = () => { location.href = '/settings'; };
 
 I18N.init().then(refresh);
