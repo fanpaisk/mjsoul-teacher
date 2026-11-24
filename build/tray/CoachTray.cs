@@ -70,11 +70,12 @@ namespace MahjongSoulCoach
             var miSettings = new ToolStripMenuItem("打开设置", null, (s, e) => Open(UrlBase + "/settings"));
             var miGame = new ToolStripMenuItem("打开雀魂", null, (s, e) => Open("https://game.maj-soul.com/1/"));
             var miLog = new ToolStripMenuItem("查看日志", null, (s, e) => OpenLog());
+            var miStar = new ToolStripMenuItem("⭐ 给项目点个 star", null, (s, e) => Open("https://github.com/fanpaisk/mjsoul-teacher"));
             var miAbout = new ToolStripMenuItem("关于", null, (s, e) => About());
             var miExit = new ToolStripMenuItem("退出", null, (s, e) => Quit());
             menu.Items.AddRange(new ToolStripItem[] {
                 miStatus, new ToolStripSeparator(), miStart, miStop, new ToolStripSeparator(),
-                miSetup, miSettings, miGame, miLog, new ToolStripSeparator(), miAbout, miExit });
+                miSetup, miSettings, miGame, miLog, new ToolStripSeparator(), miStar, miAbout, miExit });
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += (s, e) => Open(UrlBase + "/setup");
 

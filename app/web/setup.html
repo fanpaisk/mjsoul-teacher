@@ -63,6 +63,10 @@
   <div class="card">
     <div class="row"><span class="step">4</span><span class="name" data-i18n="setup.step.game">连接游戏</span><span class="badge" id="bGame" data-i18n="setup.badge.waiting">等待游戏页面</span></div>
     <div class="row dim" id="gameDetail" style="font-size:12px" data-i18n="setup.game.detail"></div>
+    <div class="row dim" id="starRow" style="display:none;font-size:12px;gap:6px">
+      <span data-i18n="setup.star.text"></span>
+      <a href="https://github.com/fanpaisk/mjsoul-teacher" target="_blank" data-i18n="setup.star.link"></a>
+    </div>
     <div class="row"><button id="btnGame" data-i18n="setup.game.open">打开雀魂</button>
       <button class="ghost" id="btnSettings" data-i18n="setup.game.settings">更多设置</button></div>
   </div>
@@ -108,11 +112,13 @@ async function refresh() {
     // 切了语言但脚本还是旧的：明确告诉用户要重装，而不是继续显示绿色「已生效」
     badge($('bScript'), T('setup.badge.stale'), 'bad');
     $('scriptHint').textContent = T('setup.script.staleHint');
+    $('starRow').style.display = 'none'; // 旧脚本时不给 star 入口，先修好再说
   } else if (frames > 0) {
     const ago = cfg.lastFrameAt ? Math.round((Date.now() - cfg.lastFrameAt) / 1000) : null;
     badge($('bGame'), T('setup.game.connected', { frames }), 'ok');
     $('gameDetail').textContent = ago !== null && ago < 30 ? T('setup.game.justNow') : (ago === null ? T('setup.game.never') : T('setup.game.secondsAgo', { n: ago }));
     badge($('bScript'), T('setup.badge.effective'), 'ok');
+    $('starRow').style.display = 'flex';
   } else {
     badge($('bGame'), T('setup.badge.waiting'), '');
     $('gameDetail').textContent = T('setup.game.detail');

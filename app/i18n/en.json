@@ -128,5 +128,7 @@
   "setup.script.staleHint": "Language changed but the userscript is still the old one — reinstall it below, then refresh the game page. The badge can lag a few seconds.",
   "boot.product": "Mahjong Soul Coach",
   "boot.modelFull": "full",
-  "settings.lang.hint": "Saving jumps to the setup wizard: step 3 must reinstall the userscript before the panel switches language."
+  "settings.lang.hint": "Saving jumps to the setup wizard: step 3 must reinstall the userscript before the panel switches language.",
+  "setup.star.text": "Finding it useful?",
+  "setup.star.link": "Leave a ★ on GitHub"
 }

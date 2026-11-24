@@ -128,5 +128,7 @@
   "setup.script.staleHint": "언어를 바꿨지만 스크립트는 이전 언어입니다. 아래 버튼으로 다시 설치하고 게임 페이지를 새로고침하세요(표시가 몇 초 늦을 수 있습니다).",
   "boot.product": "작혼 코치",
   "boot.modelFull": "전체",
-  "settings.lang.hint": "저장하면 설정 마법사로 이동합니다. 3단계에서 스크립트를 다시 설치해야 패널 언어가 바뀝니다."
+  "settings.lang.hint": "저장하면 설정 마법사로 이동합니다. 3단계에서 스크립트를 다시 설치해야 패널 언어가 바뀝니다.",
+  "setup.star.text": "도움이 되었다면",
+  "setup.star.link": "GitHub 에서 ★ 눌러 주세요"
 }

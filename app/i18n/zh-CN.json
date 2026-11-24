@@ -128,5 +128,7 @@
   "setup.script.staleHint": "语言已切换，页面脚本还是旧语言——点下面的按钮重新安装一次。装完刷新游戏页；状态可能有几秒延迟，正常。",
   "boot.product": "雀魂教练",
   "boot.modelFull": "完整版",
-  "settings.lang.hint": "保存后会跳到设置向导：那里第 3 步需要重新安装一次页面脚本，脚本才会换成新语言。"
+  "settings.lang.hint": "保存后会跳到设置向导：那里第 3 步需要重新安装一次页面脚本，脚本才会换成新语言。",
+  "setup.star.text": "觉得有用？",
+  "setup.star.link": "给项目点个 ★ 支持一下"
 }
