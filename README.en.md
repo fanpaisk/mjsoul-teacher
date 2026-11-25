@@ -20,6 +20,17 @@ So it ships with two modes:
 
 Runs locally. No telemetry. No auto-play. No certificate install.
 
+[![Release](https://img.shields.io/github/v/release/fanpaisk/mjsoul-teacher?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?style=flat-square)
+
+<p align="center">
+  <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
+    <img alt="Download" src="https://img.shields.io/badge/%E2%AC%87%20Download-Windows-2ea44f?style=for-the-badge">
+  </a>
+</p>
+
+<p align="center">152 MB · no admin rights · Chrome/Edge + Tampermonkey · Windows 10/11</p>
+
 ![overlay](docs/images/panel.png)
 
 ## Why install this one

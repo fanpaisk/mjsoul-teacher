@@ -20,6 +20,17 @@
 
 로컬 실행 · 외부 통신 없음 · 자동 타패 없음 · 인증서 설치 불필요.
 
+[![Release](https://img.shields.io/github/v/release/fanpaisk/mjsoul-teacher?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?style=flat-square)
+
+<p align="center">
+  <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
+    <img alt="다운로드" src="https://img.shields.io/badge/%E2%AC%87%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-Windows-2ea44f?style=for-the-badge">
+  </a>
+</p>
+
+<p align="center">152 MB · 관리자 권한 불필요 · Chrome/Edge + Tampermonkey · Windows 10/11</p>
+
 ![패널](docs/images/panel.png)
 
 ## 설치할 이유

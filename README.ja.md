@@ -20,6 +20,17 @@
 
 ローカル実行・外部通信なし・自動打牌なし・証明書インストール不要。
 
+[![Release](https://img.shields.io/github/v/release/fanpaisk/mjsoul-teacher?style=flat-square)](https://github.com/fanpaisk/mjsoul-teacher/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?style=flat-square)
+
+<p align="center">
+  <a href="https://github.com/fanpaisk/mjsoul-teacher/releases/latest">
+    <img alt="ダウンロード" src="https://img.shields.io/badge/%E2%AC%87%20%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-Windows-2ea44f?style=for-the-badge">
+  </a>
+</p>
+
+<p align="center">152 MB · 管理者権限不要 · Chrome/Edge + Tampermonkey · Windows 10/11</p>
+
 ![パネル](docs/images/panel.png)
 
 ## インストールする理由
