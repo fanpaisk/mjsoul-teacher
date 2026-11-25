@@ -347,6 +347,14 @@
   };
   applyP();
   window.addEventListener('keydown', (e) => {
+    // Ctrl+Shift+F10：同一个归位，给 F10 被录屏软件占用的人兜底
+    if (e.code === 'F10' && e.ctrlKey && e.shiftKey) {
+      e.preventDefault(); e.stopPropagation();
+      pState.x = null; pState.y = null; pState.hidden = false;
+      applyP(); saveP();
+      try { badge.textContent = '面板已归位 (Ctrl+Shift+F10)'; } catch (err) {}
+      return;
+    }
     // F10：面板归位（拖到屏幕外、换显示器、改分辨率都靠它）
     if (e.code === 'F10') {
       e.preventDefault(); e.stopPropagation();
