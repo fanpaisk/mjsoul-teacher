@@ -335,13 +335,26 @@
     panel.style.display = pState.hidden ? 'none' : '';
     applyPanelSize();
     clampPos();
-    if (pState.x !== null) { panel.style.left = pState.x + 'px'; panel.style.top = pState.y + 'px'; panel.style.right = 'auto'; }
+    if (pState.x !== null) {
+      panel.style.left = pState.x + 'px'; panel.style.top = pState.y + 'px'; panel.style.right = 'auto';
+    } else {
+      // 归位：回到默认的右上角（CSS 里是 top:12px / right:12px）
+      panel.style.left = 'auto'; panel.style.right = '12px'; panel.style.top = '12px';
+    }
     pBody.style.display = pState.collapsed ? 'none' : 'block';
     pBtn.textContent = pState.collapsed ? '▢' : '—';
     applyTilesMode();
   };
   applyP();
   window.addEventListener('keydown', (e) => {
+    // F10：面板归位（拖到屏幕外、换显示器、改分辨率都靠它）
+    if (e.code === 'F10') {
+      e.preventDefault(); e.stopPropagation();
+      pState.x = null; pState.y = null; pState.hidden = false;
+      applyP(); saveP();
+      try { badge.textContent = '面板已归位 (F10)'; } catch (err) {}
+      return;
+    }
     if (e.code !== 'F9') return;
     e.preventDefault(); e.stopPropagation();
     pState.hidden = !pState.hidden;
