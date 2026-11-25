@@ -32,9 +32,104 @@ namespace MahjongSoulCoach
         static string Root { get { return AppDomain.CurrentDomain.BaseDirectory; } }
         static Process server;
         static NotifyIcon tray;
-        static ToolStripMenuItem miStatus, miStart, miStop;
+        static ToolStripMenuItem miStatus, miStart, miStop, miSetup, miSettings, miGame, miLog, miStar, miAbout, miExit;
+        static string curLang = null;
         static Icon icoRun, icoStop, icoBusy;
         static System.Windows.Forms.Timer poll;
+
+        // ---- 托盘多语言 ----
+        static string Lang()
+        {
+            // 优先读服务端 /config 的 uiLang（和面板/网页一致）；服务端没起就读用户配置
+            try
+            {
+                using (var wc = new WebClient())
+                {
+                    wc.Encoding = System.Text.Encoding.UTF8;
+                    string json = wc.DownloadString(UrlBase + "/config");
+                    // 先看用户选的原始 lang：auto 时要跟随系统，而不是被服务端的 zh-CN 兜底吃掉
+                    int i = json.IndexOf("\"lang\":\"");
+                    if (i > 0)
+                    {
+                        int j = json.IndexOf('"', i + 8);
+                        string v = json.Substring(i + 8, j - i - 8);
+                        if (v != "auto") return v;
+                        return SystemLang();
+                    }
+                    i = json.IndexOf("\"uiLang\":\"");
+                    if (i > 0) { int j = json.IndexOf('"', i + 10); return json.Substring(i + 10, j - i - 10); }
+                }
+            }
+            catch { }
+            try
+            {
+                string f = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MahjongSoulCoach", "config.json");
+                if (File.Exists(f))
+                {
+                    string json = File.ReadAllText(f, System.Text.Encoding.UTF8);
+                    int i = json.IndexOf("\"lang\":\"");
+                    if (i > 0)
+                    {
+                        int j = json.IndexOf('"', i + 8);
+                        string v = json.Substring(i + 8, j - i - 8);
+                        if (v != "auto") return v;
+                    }
+                }
+            }
+            catch { }
+            return SystemLang();
+        }
+
+        static string SystemLang()
+        {
+            switch (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName)
+            {
+                case "ja": return "ja";
+                case "ko": return "ko";
+                case "en": return "en";
+                default: return "zh-CN";
+            }
+        }
+
+        static string T(string key)
+        {
+            string l = curLang ?? "zh-CN";
+            bool ja = l == "ja", ko = l == "ko", en = l == "en";
+            switch (key)
+            {
+                case "status.stop": return ja ? "状態：停止中" : ko ? "상태: 중지됨" : en ? "Status: stopped" : "状态：已停止";
+                case "status.run": return ja ? "状態：実行中" : ko ? "상태: 실행 중" : en ? "Status: running" : "状态：运行中";
+                case "start": return ja ? "起動" : ko ? "시작" : en ? "Start coach" : "启动教练";
+                case "stop": return ja ? "停止" : ko ? "중지" : en ? "Stop coach" : "停止教练";
+                case "setup": return ja ? "セットアップ" : ko ? "설정 마법사" : en ? "Setup wizard" : "打开设置向导";
+                case "settings": return ja ? "設定" : ko ? "설정" : en ? "Settings" : "打开设置";
+                case "game": return ja ? "雀魂を開く" : ko ? "작혼 열기" : en ? "Open Mahjong Soul" : "打开雀魂";
+                case "log": return ja ? "ログを見る" : ko ? "로그 보기" : en ? "View log" : "查看日志";
+                case "star": return ja ? "⭐ GitHub で star" : ko ? "⭐ GitHub 에서 star" : en ? "⭐ Star on GitHub" : "⭐ 给项目点个 star";
+                case "about": return ja ? "このアプリについて" : ko ? "정보" : en ? "About" : "关于";
+                case "exit": return ja ? "終了" : ko ? "종료" : en ? "Quit" : "退出";
+                case "tray.stop": return ja ? "雀魂コーチ · 停止中" : ko ? "작혼 코치 · 중지됨" : en ? "Mahjong Soul Coach · stopped" : "雀魂教练 · 已停止";
+                case "tray.run": return ja ? "雀魂コーチ · 実行中" : ko ? "작혼 코치 · 실행 중" : en ? "Mahjong Soul Coach · running" : "雀魂教练 · 运行中";
+                default: return key;
+            }
+        }
+
+        static void ApplyLang(bool force=false)
+        {
+            string l = Lang();
+            if (!force && l == curLang) return;
+            curLang = l;
+            if (miStatus != null && miStatus.Text != "")
+            {
+                // 状态文字由 RefreshStatus 维护，这里只在语言变化时重设一次
+                miStatus.Text = T("status.stop");
+            }
+            miStart.Text = T("start"); miStop.Text = T("stop");
+            miSetup.Text = T("setup"); miSettings.Text = T("settings");
+            miGame.Text = T("game"); miLog.Text = T("log");
+            miStar.Text = T("star"); miAbout.Text = T("about"); miExit.Text = T("exit");
+            if (tray != null) tray.Text = T("tray.stop");
+        }
 
         [STAThread]
         static void Main(string[] args)
@@ -66,17 +161,19 @@ namespace MahjongSoulCoach
             miStatus = new ToolStripMenuItem("状态：已停止") { Enabled = false };
             miStart = new ToolStripMenuItem("启动教练", null, (s, e) => StartServer());
             miStop = new ToolStripMenuItem("停止教练", null, (s, e) => StopServer());
-            var miSetup = new ToolStripMenuItem("打开设置向导", null, (s, e) => Open(UrlBase + "/setup"));
-            var miSettings = new ToolStripMenuItem("打开设置", null, (s, e) => Open(UrlBase + "/settings"));
-            var miGame = new ToolStripMenuItem("打开雀魂", null, (s, e) => Open("https://game.maj-soul.com/1/"));
-            var miLog = new ToolStripMenuItem("查看日志", null, (s, e) => OpenLog());
-            var miStar = new ToolStripMenuItem("⭐ 给项目点个 star", null, (s, e) => Open("https://github.com/fanpaisk/mjsoul-teacher"));
-            var miAbout = new ToolStripMenuItem("关于", null, (s, e) => About());
-            var miExit = new ToolStripMenuItem("退出", null, (s, e) => Quit());
+            miSetup = new ToolStripMenuItem("打开设置向导", null, (s, e) => Open(UrlBase + "/setup"));
+            miSettings = new ToolStripMenuItem("打开设置", null, (s, e) => Open(UrlBase + "/settings"));
+            miGame = new ToolStripMenuItem("打开雀魂", null, (s, e) => Open("https://game.maj-soul.com/1/"));
+            miLog = new ToolStripMenuItem("查看日志", null, (s, e) => OpenLog());
+            miStar = new ToolStripMenuItem("⭐ 给项目点个 star", null, (s, e) => Open("https://github.com/fanpaisk/mjsoul-teacher"));
+            miAbout = new ToolStripMenuItem("关于", null, (s, e) => About());
+            miExit = new ToolStripMenuItem("退出", null, (s, e) => Quit());
             menu.Items.AddRange(new ToolStripItem[] {
                 miStatus, new ToolStripSeparator(), miStart, miStop, new ToolStripSeparator(),
                 miSetup, miSettings, miGame, miLog, new ToolStripSeparator(), miStar, miAbout, miExit });
             tray.ContextMenuStrip = menu;
+            // 打开菜单的那一刻再对一次语言：切完语言回来点右键，应该立刻是新语言
+            menu.Opening += (s2, e2) => ApplyLang();
             tray.DoubleClick += (s, e) => Open(UrlBase + "/setup");
 
             if (selftest)
@@ -89,9 +186,10 @@ namespace MahjongSoulCoach
 
             poll = new System.Windows.Forms.Timer();
             poll.Interval = 3000;
-            poll.Tick += (s, e) => RefreshStatus();
+            poll.Tick += (s, e) => { RefreshStatus(); ApplyLang(); };
             poll.Start();
 
+            ApplyLang(true);
             if (!Ping()) StartServer();
             RefreshStatus();
 
@@ -136,13 +234,13 @@ namespace MahjongSoulCoach
             miStop.Enabled = up;
             if (up)
             {
-                miStatus.Text = "状态：运行中";
+                miStatus.Text = T("status.run"); tray.Text = T("tray.run");
                 tray.Icon = icoRun;
                 tray.Text = "雀魂教练 · 运行中";
             }
             else
             {
-                miStatus.Text = "状态：已停止";
+                miStatus.Text = T("status.stop"); tray.Text = T("tray.stop");
                 tray.Icon = icoStop;
                 tray.Text = "雀魂教练 · 已停止";
             }
@@ -266,8 +364,14 @@ namespace MahjongSoulCoach
                 }
             }
             catch { }
-            MessageBox.Show("雀魂教练 v" + v + "\n\n本地 AI 教练：WebSocket 捕获对局 → Mortal 神经网络评估 → 游戏内悬浮面板。\n所有推理在本机完成，不联网。\n\n仅供学习研究，风险自负。",
-                "关于");
+            string l = curLang ?? "zh-CN";
+            string title = l == "ja" ? "このアプリについて" : l == "ko" ? "정보" : l == "en" ? "About" : "关于";
+            string body =
+                l == "ja" ? "雀魂コーチ v" + v + "\n\nローカル AI コーチ：対局を取得 → Mortal で評価 → ゲーム内オーバーレイ。\n推論はすべて本機で完結、外部通信なし。\n\n学習・研究用です。自己責任で。"
+                : l == "ko" ? "작혼 코치 v" + v + "\n\n로컬 AI 코치: 대국 캡처 → Mortal 평가 → 게임 내 오버레이.\n추론은 전부 이 PC 에서, 외부 통신 없음.\n\n학습·연구용. 위험은 본인 부담."
+                : l == "en" ? "Mahjong Soul Coach v" + v + "\n\nA local AI coach: captures the match → Mortal evaluation → in-game overlay.\nAll inference happens on this machine; nothing is uploaded.\n\nFor study and research. Use at your own risk."
+                : "雀魂教练 v" + v + "\n\n本地 AI 教练：WebSocket 捕获对局 → Mortal 神经网络评估 → 游戏内悬浮面板。\n所有推理在本机完成，不联网。\n\n仅供学习研究，风险自负。";
+            MessageBox.Show(body, title);
         }
 
         static void Open(string url) { try { Process.Start(url); } catch (Exception ex) { MessageBox.Show("打不开：" + ex.Message); } }
